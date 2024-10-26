@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -33,11 +33,11 @@ uses
   DUnitX.TestFramework,
   BusinessObjectsU,
   Generics.Collections,
-  System.JSON,
+  JsonDataObjects,
   MVCFramework.RESTClient,
-  MVCFramework.RESTClient.Intf,
   MVCFramework.Commons,
-  MVCFramework.Serializer.Commons;
+  MVCFramework.Serializer.Commons,
+  MVCFramework.RESTClient.Intf;
 
 type
 
@@ -73,7 +73,7 @@ type
     [Headers('Accept', 'application/json')]
     [Headers('ContentType', 'application/json')]
     [RESTResource(HttpGet, '/adapter/testconsumejson')]
-    function HeadersApplicationJSON: TJSONValue;
+    function HeadersApplicationJSON: TJsonBaseObject;
 
     [Headers('Accept', 'text/plain')]
     [Headers('ContentType', 'text/plain')]
@@ -119,7 +119,12 @@ type
 
 implementation
 
-uses System.SysUtils, System.Rtti, System.SyncObjs, LiveServerTestU, TestConstsU;
+uses
+  System.SysUtils,
+  System.Rtti,
+  System.SyncObjs,
+  LiveServerTestU,
+  TestConstsU;
 
 { TTestRESTAdapter }
 
@@ -127,7 +132,7 @@ procedure TTestRESTAdapter.SetUp;
 begin
   inherited;
   RESTAdapter := TRESTAdapter<ITESTService>.Create;
-  TESTService := RESTAdapter.Build(TEST_SERVER_ADDRESS, 9999);
+  TESTService := RESTAdapter.Build(TEST_SERVER_ADDRESS, 8888);
 end;
 
 procedure TTestRESTAdapter.TestGetPersonByID;
@@ -209,7 +214,7 @@ var
 begin
   Res := TESTService.HeadersApplicationJSON as TJSONObject;
   try
-    Assert.AreEqual('Hello World', Res.GetValue('key').Value);
+    Assert.AreEqual('Hello World', Res.S['key']);
   finally
     Res.Free;
   end;

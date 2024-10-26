@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -29,7 +29,8 @@ unit MVCFramework.FireDAC.Utils;
 interface
 
 uses
-  FireDAC.Comp.Client, FireDAC.Stan.Param, System.Rtti;
+  FireDAC.Comp.Client, FireDAC.Stan.Param, System.Rtti, JsonDataObjects,
+  Data.DB, FireDAC.Comp.DataSet;
 
 type
   TFireDACUtils = class sealed
@@ -43,14 +44,21 @@ type
     class function ExecuteQueryNoResult(AQuery: TFDQuery;
       AObject: TObject): Int64;
     class procedure ExecuteQuery(AQuery: TFDQuery; AObject: TObject);
-    class procedure ObjectToParameters(AFDParams: TFDParams; AObject: TObject; AParamPrefix: string = ''; ASetParamTypes: Boolean = True);
+    class procedure ObjectToParameters(AFDParams: TFDParams; AObject: TObject; AParamPrefix: string = '';
+      ASetParamTypes: boolean = True);
+    class procedure CreateDatasetFromMetadata(AFDMemTable: TFDCustomMemTable; AMeta: TJSONObject);
+  end;
+  
+  TFDCustomMemTableHelper = class helper for TFDCustomMemTable
+  public
+    procedure InitFromMetadata(const AJSONMetadata: TJSONObject);
+    class function CloneFrom(const FDDataSet: TFDDataSet): TFDMemTable; static;
   end;
 
 implementation
 
 uses
   System.Generics.Collections,
-  Data.DB,
   System.Classes,
   MVCFramework.Serializer.Commons,
   System.SysUtils;
@@ -60,6 +68,34 @@ uses
 class constructor TFireDACUtils.Create;
 begin
   TFireDACUtils.CTX := TRttiContext.Create;
+end;
+
+class procedure TFireDACUtils.CreateDatasetFromMetadata(
+  AFDMemTable: TFDCustomMemTable; AMeta: TJSONObject);
+var
+  lJArr: TJSONArray;
+  I: Integer;
+  lJObj: TJSONObject;
+begin
+  if AMeta.IsNull('fielddefs') then
+  begin
+    raise EMVCDeserializationException.Create('Invalid Metadata objects. Property [fielddefs] required.');
+  end;
+
+  AFDMemTable.Active := False;;
+  AFDMemTable.FieldDefs.Clear;
+  lJArr := AMeta.A['fielddefs'];
+  for I := 0 to lJArr.Count - 1 do
+  begin
+    lJObj := lJArr.Items[I].ObjectValue;
+    AFDMemTable.FieldDefs.Add(
+      lJObj.S['fieldname'],
+      TFieldType(lJObj.I['datatype']),
+      lJObj.I['size']);
+    { TODO -oDanieleT -cGeneral : Why don't change the display name? }
+    AFDMemTable.FieldDefs[I].DisplayName := lJObj.S['displayname'];
+  end;
+  AFDMemTable.CreateDataset;
 end;
 
 class destructor TFireDACUtils.Destroy;
@@ -75,11 +111,11 @@ end;
 class function TFireDACUtils.ExecuteQueryNoResult(AQuery: TFDQuery;
   AObject: TObject): Int64;
 begin
-  Result := InternalExecuteQuery(AQuery, AObject, false);
+  Result := InternalExecuteQuery(AQuery, AObject, False);
 end;
 
 class procedure TFireDACUtils.ObjectToParameters(AFDParams: TFDParams;
-  AObject: TObject; AParamPrefix: string; ASetParamTypes: Boolean);
+  AObject: TObject; AParamPrefix: string; ASetParamTypes: boolean);
 var
   I: Integer;
   pname: string;
@@ -131,7 +167,7 @@ begin
   try
     if Assigned(AObject) then
     begin
-      _rttiType := ctx.GetType(AObject.ClassType);
+      _rttiType := CTX.GetType(AObject.ClassType);
       obj_fields := _rttiType.GetProperties;
       for obj_field in obj_fields do
       begin
@@ -185,6 +221,17 @@ begin
     AQuery.ExecSQL;
     Result := AQuery.RowsAffected;
   end;
+end;
+
+class function TFDCustomMemTableHelper.CloneFrom(const FDDataSet: TFDDataSet): TFDMemTable;
+begin
+  Result := TFDMemTable.Create(nil);
+  TFDMemTable(Result).CloneCursor(FDDataSet);
+end;
+
+procedure TFDCustomMemTableHelper.InitFromMetadata(const AJSONMetadata: TJSONObject);
+begin
+  TFireDACUtils.CreateDatasetFromMetadata(Self, AJSONMetadata);
 end;
 
 end.

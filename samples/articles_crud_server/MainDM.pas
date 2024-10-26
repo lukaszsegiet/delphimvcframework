@@ -23,7 +23,7 @@ uses
   FireDAC.DApt,
   FireDAC.Comp.DataSet,
   FireDAC.Phys.FBDef,
-  FireDAC.VCLUI.Wait;
+  FireDAC.VCLUI.Wait, Services;
 
 type
   TdmMain = class(TDataModule)
@@ -34,7 +34,9 @@ type
   private
     { Private declarations }
   public
+    constructor Create; reintroduce;
     function SearchProducts(const SearchText: string): TDataSet;
+
   end;
 
 implementation
@@ -42,39 +44,19 @@ implementation
 {%CLASSGROUP 'Vcl.Controls.TControl'}
 {$R *.dfm}
 
-
 uses
   System.IOUtils,
+  MVCFramework.Commons,
   MVCFramework.DataSet.Utils;
 
 procedure TdmMain.ConnectionBeforeConnect(Sender: TObject);
-var
-  lPath: string;
-  I: Integer;
 begin
-  // {$IFNDEF WINDOWSSERVICE}
-  // // if you want to use firebird 2.5, you can use the file ORDERSMANAGER_FB25.FDB
-  // Connection.Params.Values['Database'] := '..\..\data\ORDERSMANAGER_FB30.FDB';
-  // // Connection.Params.Values['Database'] := '..\..\data\ORDERSMANAGER_FB25.FDB';
-  // {$ELSE}
-  lPath := 'data\ORDERSMANAGER_FB30.FDB';
-  for I := 1 to 6 do
-  begin
-    if TFile.Exists(lPath) then
-    begin
-      Connection.Params.Values['Database'] := TPath.GetFullPath(lPath); // 'C:\DEV\dmvcframework\samples\data\ORDERSMANAGER_FB30.FDB';
-      Break;
-    end
-    else
-    begin
-      lPath := '..\' + lPath;
-    end;
-  end;
-  if not TFile.Exists(lPath) then
-  begin
-    raise Exception.Create('Cannot find database');
-  end;
-  // {$ENDIF}
+  Connection.Params.Values['Database'] := dotEnv.Env('database.path');
+end;
+
+constructor TdmMain.Create;
+begin
+  inherited Create(nil);
 end;
 
 function TdmMain.SearchProducts(const SearchText: string): TDataSet;

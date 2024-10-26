@@ -1,27 +1,3 @@
-// ***************************************************************************
-//
-// Delphi MVC Framework
-//
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
-//
-// https://github.com/danieleteti/delphimvcframework
-//
-// ***************************************************************************
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-// http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-//
-// *************************************************************************** }
-
 unit WebModuleU;
 
 interface
@@ -75,7 +51,7 @@ begin
     try
       if GLogWriter = nil then // double check locking (https://en.wikipedia.org/wiki/Double-checked_locking)
       begin
-        lLog := TLoggerProFileAppender.Create(5, 2000, AppPath + 'analytics', [], '%s.%2.2d.%s.csv');
+        lLog := TLoggerProFileAppender.Create(5, 2000, AppPath + 'analytics', TPath.ChangeExtension(TLoggerProFileAppenderBase.DEFAULT_FILENAME_FORMAT, 'csv'));
         TLoggerProFileAppender(lLog).OnLogRow := procedure(const LogItem: TLogItem; out LogRow: string)
           begin
             LogRow := Format('%s;%s;%s;%s', [
@@ -113,13 +89,13 @@ begin
       // Enable Server Signature in response
       Config[TMVCConfigKey.ExposeServerSignature] := 'false';
     end);
-  FMVC.AddController(TMainController);
-  FMVC.AddMiddleware(TMVCAnalyticsMiddleware.Create(GetLoggerForAnalytics));
+  FMVC
+    .AddController(TMainController)
+    .AddMiddleware(TMVCAnalyticsMiddleware.Create(GetAnalyticsDefaultLogger));
   FMVC.AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
+    '/static', { StaticFilesPath }
     TPath.Combine(ExtractFilePath(GetModuleName(HInstance)), 'www'), { DocumentRoot }
-    'index.html', {IndexDocument - Before it was named fallbackresource}
-    False
+    'index.html' {IndexDocument - Before it was named fallbackresource}
     ));
 end;
 

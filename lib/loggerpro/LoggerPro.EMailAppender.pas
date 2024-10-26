@@ -1,6 +1,28 @@
+// *************************************************************************** }
+//
+// LoggerPro
+//
+// Copyright (c) 2010-2024 Daniele Teti
+//
+// https://github.com/danieleteti/loggerpro
+//
+// ***************************************************************************
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// ***************************************************************************
+
 unit LoggerPro.EMailAppender;
-{ <@abstract(The unit to include if you want to use @link(TLoggerProRedisAppender))
-  @author(Daniele Teti) }
 
 interface
 
@@ -26,7 +48,7 @@ type
     /// </summary>
     procedure PrepareMessage(const aLogItem: TLogItem; out aSubject, aBody: String); virtual;
   public
-    constructor Create(aSMTP: TIdSMTP; const aFromAddresses, aToAddresses: String); reintroduce;
+    constructor Create(aSMTP: TIdSMTP; const aFromAddresses, aToAddresses: String; aLogItemRenderer: ILogItemRenderer = nil); reintroduce;
     procedure Setup; override;
     procedure TearDown; override;
     procedure WriteLog(const aLogItem: TLogItem); override;
@@ -38,12 +60,9 @@ implementation
 uses
   System.SysUtils, IdMessage;
 
-const
-  DEFAULT_LOG_FORMAT = '%0:s [TID %1:-8d][%2:-8s] %3:s [%4:s]';
-
-constructor TLoggerProEMailAppender.Create(aSMTP: TIdSMTP; const aFromAddresses, aToAddresses: String);
+constructor TLoggerProEMailAppender.Create(aSMTP: TIdSMTP; const aFromAddresses, aToAddresses: String; aLogItemRenderer: ILogItemRenderer);
 begin
-  inherited Create;
+  inherited Create(aLogItemRenderer);
   FSMTP := aSMTP;
   FFromAddresses := aFromAddresses;
   FToAddresses := aToAddresses;
@@ -55,14 +74,12 @@ procedure TLoggerProEMailAppender.PrepareMessage(const aLogItem: TLogItem;
   out aSubject, aBody: String);
 begin
   aSubject := 'LoggerPro ' + aLogItem.LogTypeAsString.ToUpper + ' [' + aLogItem.LogTag + ']';
-  aBody := Format(DEFAULT_LOG_FORMAT, [datetimetostr(aLogItem.TimeStamp),
-    aLogItem.ThreadID, aLogItem.LogTypeAsString, aLogItem.LogMessage,
-    aLogItem.LogTag]);
+  aBody := FormatLog(aLogItem);
 end;
 
 procedure TLoggerProEMailAppender.Setup;
 begin
-  //
+  inherited;
 end;
 
 procedure TLoggerProEMailAppender.TearDown;

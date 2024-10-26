@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2017 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -33,7 +33,9 @@ type
   TMVCSpeedMiddleware = class(TInterfacedObject, IMVCMiddleware)
   public
     procedure OnBeforeRouting(Context: TWebContext; var Handled: Boolean);
-    procedure OnAfterControllerAction(Context: TWebContext; const AActionNAme: string; const Handled: Boolean);
+    procedure OnAfterControllerAction(Context: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionNAme: string;
+	  const Handled: Boolean);
     procedure OnBeforeControllerAction(Context: TWebContext;
       const AControllerQualifiedClassName: string; const AActionNAme: string;
       var Handled: Boolean);
@@ -45,16 +47,37 @@ implementation
 uses
   MVCFramework.Serializer.Commons, System.SysUtils, DateUtils;
 
-{ TMVCSpeedMiddleware }
+type
+  ISpeedData = interface
+    ['{72B0C1CA-00D1-431F-B093-C91A90147F90}']
+    procedure SetData(value: TDateTime);
+    function GetData: TDateTime;
+  end;
 
-procedure TMVCSpeedMiddleware.OnAfterControllerAction(Context: TWebContext; const AActionNAme: string;
+  TSpeedData = class(TInterfacedObject, ISpeedData)
+  private
+    fData: TDateTime;
+  protected
+    procedure SetData(value: TDateTime);
+    function GetData: TDateTime;
+  public
+    destructor Destroy; override;
+  end;
+
+  { TMVCSpeedMiddleware }
+
+procedure TMVCSpeedMiddleware.OnAfterControllerAction(Context: TWebContext;
+  const AControllerQualifiedClassName: string; const AActionNAme: string;
   const Handled: Boolean);
 begin
+  // Context.Response.CustomHeaders.Values['request_gen_time'] :=
+  // MilliSecondsBetween(Now, ISOTimeStampToDateTime(Context.Data[classname + 'startup'])).ToString
   Context.Response.CustomHeaders.Values['request_gen_time'] :=
-    MilliSecondsBetween(Now, ISOTimeStampToDateTime(Context.Data[classname + 'startup'])).ToString
+    MilliSecondsBetween(Now, ISOTimeStampToDateTime(Context.Data['start_req_timestamp'])).ToString;
 end;
 
-procedure TMVCSpeedMiddleware.OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+procedure TMVCSpeedMiddleware.OnAfterRouting(AContext: TWebContext;
+  const AHandled: Boolean);
 begin
 
 end;
@@ -66,7 +89,8 @@ begin
 
 end;
 
-procedure TMVCSpeedMiddleware.OnBeforeRouting(Context: TWebContext; var Handled: Boolean);
+procedure TMVCSpeedMiddleware.OnBeforeRouting(Context: TWebContext;
+  var Handled: Boolean);
 begin
   if Context.Request.PathInfo = '/handledbymiddleware' then
   begin
@@ -75,8 +99,27 @@ begin
     Context.Response.StatusCode := 200;
   end
   else
+  begin
+    Context.Data['start_req_timestamp'] := DateTimeToISOTimeStamp(now);
+  end;
+end;
 
-    Context.Data.Add(classname + 'startup', DateTimeToISOTimeStamp(Now));
+{ TSpeedData }
+
+destructor TSpeedData.Destroy;
+begin
+
+  inherited;
+end;
+
+function TSpeedData.GetData: TDateTime;
+begin
+  Result := fData;
+end;
+
+procedure TSpeedData.SetData(value: TDateTime);
+begin
+  fData := value;
 end;
 
 end.

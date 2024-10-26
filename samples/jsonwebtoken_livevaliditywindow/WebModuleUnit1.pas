@@ -34,6 +34,7 @@ uses
   AuthenticationU,
   MVCFramework.Middleware.JWT,
   MVCFramework.JWT,
+  MVCFramework.HMAC,
   MVCFramework.Middleware.StaticFiles,
   System.DateUtils;
 
@@ -51,7 +52,7 @@ begin
       // Here we dont use a fixed ExpirationTime but a LiveValidityWindowInSeconds
       // to make the ExpirationTime dynamic, incrementing the
       // ExpirationTime by LiveValidityWindowInSeconds seconds at each request
-      JWT.LiveValidityWindowInSeconds := 10; // 60 * 60; // 1 hour
+      JWT.LiveValidityWindowInSeconds := 10; // 60 * 60;
     end;
 
   MVC := TMVCEngine.Create(Self,
@@ -64,13 +65,14 @@ begin
     .AddController(TApp1MainController)
     .AddController(TAdminController)
     .AddMiddleware(TMVCJWTAuthenticationMiddleware.Create(
-      TAuthenticationSample.Create, lClaimsSetup, 'mys3cr37', '/login',
-      [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt], 0
+      TAuthenticationSample.Create,
+      lClaimsSetup,
+      'mys3cr37',
+      '/login',
+      [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt],
+      0,
+      HMAC_HS512
     // just for test, Leeway seconds is zero.
-    ))
-    .AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
-    '..\..\www' { DocumentRoot }
     ));
 end;
 

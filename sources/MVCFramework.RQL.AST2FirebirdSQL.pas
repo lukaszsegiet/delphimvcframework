@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -29,26 +29,77 @@ interface
 uses
   MVCFramework.RQL.Parser;
 
+const
+  RQLFirebirdReservedWords: TArray<string> = [
+    'ADD', 'ADMIN', 'ALL', 'ALTER', 'AND', 'ANY', 'AS', 'AT', 'AVG',
+    'BEGIN', 'BETWEEN', 'BIGINT', 'BIT_LENGTH', 'BLOB', 'BOTH', 'BY',
+    'CASE', 'CAST', 'CHAR', 'CHAR_LENGTH', 'CHARACTER', 'CHARACTER_LENGTH',
+    'CHECK', 'CLOSE', 'COLLATE', 'COLUMN', 'COMMIT', 'CONNECT', 'CONSTRAINT',
+    'COUNT', 'CREATE', 'CROSS', 'CURRENT', 'CURRENT_CONNECTION',
+    'CURRENT_DATE', 'CURRENT_ROLE', 'CURRENT_TIME', 'CURRENT_TIMESTAMP',
+    'CURRENT_TRANSACTION', 'CURRENT_USER', 'CURSOR',
+    'DATE', 'DAY', 'DEC', 'DECIMAL', 'DECLARE', 'DEFAULT', 'DELETE',
+    'DISCONNECT', 'DISTINCT', 'DOUBLE', 'DROP',
+    'ELSE', 'END', 'ESCAPE', 'EXECUTE', 'EXISTS', 'EXTERNAL', 'EXTRACT',
+    'FETCH', 'FILTER', 'FLOAT', 'FOR', 'FOREIGN', 'FROM', 'FULL', 'FUNCTION',
+    'GDSCODE', 'GLOBAL', 'GRANT', 'GROUP',
+    'HAVING', 'HOUR',
+    'IN', 'INDEX', 'INNER', 'INSENSITIVE', 'INSERT', 'INT', 'INTEGER', 'INTO', 'IS',
+    'JOIN',
+    'LEADING', 'LEFT', 'LIKE', 'LONG', 'LOWER',
+    'MAX', 'MAXIMUM_SEGMENT', 'MERGE', 'MIN', 'MINUTE', 'MONTH',
+    'NATIONAL', 'NATURAL', 'NCHAR', 'NO', 'NOT', 'NULL', 'NUMERIC',
+    'OCTET_LENGTH', 'OF', 'ON', 'ONLY', 'OPEN', 'OR', 'ORDER', 'OUTER',
+    'PARAMETER', 'PLAN', 'POSITION', 'POST_EVENT', 'PRECISION', 'PRIMARY', 'PROCEDURE',
+    'RDB$DB_KEY', 'REAL', 'RECORD_VERSION', 'RECREATE', 'RECURSIVE', 'REFERENCES', 'RELEASE',
+    'RETURNING_VALUES', 'RETURNS', 'REVOKE', 'RIGHT', 'ROLLBACK', 'ROW_COUNT', 'ROWS',
+    'SAVEPOINT', 'SECOND', 'SELECT', 'SENSITIVE', 'SET', 'SIMILAR', 'SMALLINT', 'SOME',
+    'SQLCODE', 'SQLSTATE', 'START', 'SUM',
+    'TABLE', 'THEN', 'TIME', 'TIMESTAMP', 'TO', 'TRAILING', 'TRIGGER', 'TRIM',
+    'UNION', 'UNIQUE', 'UPDATE', 'UPPER', 'USER', 'USING',
+    'VALUE', 'VALUES', 'VARCHAR', 'VARIABLE', 'VARYING', 'VIEW',
+    'WHEN', 'WHERE', 'WHILE', 'WITH',
+    'YEAR'];
+
 type
   TRQLFirebirdCompiler = class(TRQLCompiler)
   protected
+    function GetLiteralBoolean(const Value: Boolean): String; virtual;
     function RQLFilterToSQL(const aRQLFIlter: TRQLFilter): string; virtual;
     function RQLSortToSQL(const aRQLSort: TRQLSort): string; virtual;
     function RQLLimitToSQL(const aRQLLimit: TRQLLimit): string; virtual;
     function RQLWhereToSQL(const aRQLWhere: TRQLWhere): string; virtual;
     function RQLLogicOperatorToSQL(const aRQLFIlter: TRQLLogicOperator): string; virtual;
-    function RQLCustom2SQL(const aRQLCustom: TRQLCustom): string; virtual;
+    function RQLCustom2SQL(const aRQLCustom: TRQLCustom): string; override;
   public
-    procedure AST2SQL(const aRQLAST: TRQLAbstractSyntaxTree; out aSQL: string); override;
+    function GetFieldNameForSQL(const FieldName: string): string; override;
   end;
 
 implementation
 
 uses
   System.SysUtils,
+  System.StrUtils,
   MVCFramework.ActiveRecord;
 
 { TRQLFirebirdCompiler }
+
+function TRQLFirebirdCompiler.GetFieldNameForSQL(const FieldName: string): string;
+begin
+  if MatchStr(FieldName.ToUpper, RQLFirebirdReservedWords) then
+    Result := FieldName.QuotedString('"')
+  else
+    Result := inherited;
+end;
+
+function TRQLFirebirdCompiler.GetLiteralBoolean(const Value: Boolean): String;
+begin
+  if Value then
+  begin
+    Exit('true');
+  end;
+  Exit('false');
+end;
 
 function TRQLFirebirdCompiler.RQLCustom2SQL(
   const aRQLCustom: TRQLCustom): string;
@@ -86,14 +137,14 @@ begin
   else if aRQLFIlter.RightValueType = vtBoolean then
   begin
     if SameText(aRQLFIlter.OpRight, 'true') then
-      lValue := '1'
+      lValue := GetLiteralBoolean(true)
     else
-      lValue := '0';
+      lValue := GetLiteralBoolean(false);
   end
   else
     lValue := aRQLFIlter.OpRight;
 
-  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft);
+  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft, True);
 
   case aRQLFIlter.Token of
     tkEq:
@@ -129,6 +180,10 @@ begin
     tkContains:
       begin
         Result := Format('(%s containing %s)', [lDBFieldName, lValue.ToLower])
+      end;
+    tkStarts:
+      begin
+        Result := Format('(%s starting with %s)', [lDBFieldName, lValue.ToLower])
       end;
     tkIn:
       begin
@@ -219,7 +274,7 @@ begin
   begin
     if I > 0 then
       Result := Result + ',';
-    Result := Result + ' ' + GetDatabaseFieldName(aRQLSort.Fields[I]);
+    Result := Result + ' ' + GetDatabaseFieldName(aRQLSort.Fields[I], True);
     if aRQLSort.Signs[I] = '+' then
       Result := Result + ' ASC'
     else
@@ -230,32 +285,6 @@ end;
 function TRQLFirebirdCompiler.RQLWhereToSQL(const aRQLWhere: TRQLWhere): string;
 begin
   Result := ' where ';
-end;
-
-procedure TRQLFirebirdCompiler.AST2SQL(const aRQLAST: TRQLAbstractSyntaxTree;
-  out aSQL: string);
-var
-  lBuff: TStringBuilder;
-  lItem: TRQLCustom;
-begin
-  inherited;
-
-  {
-    Here you can rearrange tokens in the list, for example:
-    For firebird and mysql syntax you have: filters, sort, limit (default)
-    For MSSQL syntax you need to rearrange in: limit, filters, sort
-  }
-
-  lBuff := TStringBuilder.Create;
-  try
-    for lItem in aRQLAST do
-    begin
-      lBuff.Append(RQLCustom2SQL(lItem));
-    end;
-    aSQL := lBuff.ToString;
-  finally
-    lBuff.Free;
-  end;
 end;
 
 initialization

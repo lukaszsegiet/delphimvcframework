@@ -7,8 +7,8 @@ uses
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, FireDAC.Stan.Intf, FireDAC.Stan.Option,
   FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf,
   FireDAC.DApt.Intf, Data.DB, FireDAC.Comp.DataSet, FireDAC.Comp.Client,
-  Vcl.Grids, Vcl.DBGrids, Vcl.ExtCtrls, Vcl.StdCtrls, MVCFramework.RESTClient,
-  Vcl.DBCtrls, MVCFramework.RESTClient.Intf;
+  Vcl.Grids, Vcl.DBGrids, Vcl.ExtCtrls, Vcl.StdCtrls, MVCFramework.RESTClient.Intf, MVCFramework.RESTClient,
+  Vcl.DBCtrls, Vcl.Buttons;
 
 type
   TMainForm = class(TForm)
@@ -28,9 +28,12 @@ type
     EditFilter: TEdit;
     Label1: TLabel;
     btnFilter: TButton;
+    dsArticlescreatedat: TDateTimeField;
+    dsArticlesupdatedat: TDateTimeField;
     procedure FormCreate(Sender: TObject);
     procedure dsArticlesBeforePost(DataSet: TDataSet);
     procedure dsArticlesBeforeDelete(DataSet: TDataSet);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure dsArticlesBeforeRefresh(DataSet: TDataSet);
     procedure dsArticlesAfterOpen(DataSet: TDataSet);
     procedure btnOpenClick(Sender: TObject);
@@ -38,10 +41,12 @@ type
     procedure dsArticlesBeforeRowRequest(DataSet: TFDDataSet);
     procedure btnRefreshRecordClick(Sender: TObject);
     procedure btnFilterClick(Sender: TObject);
+    procedure dsArticlesAfterPost(DataSet: TDataSet);
   private
     fFilter: string;
     fLoading: Boolean;
     fRESTClient: IMVCRESTClient;
+    fBkmrk: TArray<Byte>;
     { Private declarations }
     procedure ShowError(const AResponse: IMVCRESTResponse);
     procedure SetFilter(const Value: string);
@@ -55,7 +60,7 @@ var
 implementation
 
 uses
-  System.UITypes, MVCFramework.DataSet.Utils;
+  System.UITypes, MVCFramework.DataSet.Utils, MVCFramework.Commons, JsonDataObjects;
 
 {$R *.dfm}
 
@@ -68,7 +73,7 @@ end;
 procedure TMainForm.btnFilterClick(Sender: TObject);
 begin
   dsArticles.Close;
-  Filter := EditFilter.Text;;
+  Filter := EditFilter.Text;
   dsArticles.Open;
 end;
 
@@ -95,7 +100,9 @@ begin
   end
   else
   begin
-    Res := fRESTClient.AddQueryStringParam('q', fFilter).Get('/articles/searches');
+    Res := fRESTClient
+      .AddQueryStringParam('q', fFilter)
+      .Get('/articles/searches');
   end;
 
   if not Res.Success then
@@ -112,6 +119,14 @@ begin
     dsArticles.First;
   finally
     DataSet.EnableControls;
+  end;
+end;
+
+procedure TMainForm.dsArticlesAfterPost(DataSet: TDataSet);
+begin
+  if DataSet.BookmarkValid(fBkmrk) then
+  begin
+    DataSet.GotoBookmark(fBkmrk);
   end;
 end;
 
@@ -142,11 +157,8 @@ begin
     begin
       ShowError(Res);
       Abort;
-    end
-    else
-    begin
-      DataSet.Refresh;
     end;
+    fBkmrk := DataSet.GetBookmark;
   end;
 end;
 
@@ -161,11 +173,16 @@ var
   Res: IMVCRESTResponse;
 begin
   Res := fRESTClient
-    .AddPathParam('Id', DataSet.FieldByName('id').AsString)
-    .Get('/articles/($Id)');
+    .AddPathParam('param1', DataSet.FieldByName('id').AsString)
+    .Get('/articles/{param1}');
   fLoading := true;
   DataSet.LoadJSONObjectFromJSONObjectProperty('data', Res.Content);
   fLoading := false;
+end;
+
+procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  fRESTClient := nil;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
@@ -180,17 +197,26 @@ begin
 end;
 
 procedure TMainForm.ShowError(const AResponse: IMVCRESTResponse);
+var
+  lJSON: TJsonObject;
+  lMsg: string;
 begin
-  if not AResponse.Success then
-    MessageDlg(
-      AResponse.StatusCode.ToString + ': ' + AResponse.StatusText + sLineBreak +
-      '[' + AResponse.Content + ']',
-      mtError, [mbOK], 0)
+  if (not AResponse.Success) and
+    AResponse.ContentType.ToLower.Contains(TMVCMediaType.APPLICATION_JSON) then
+  begin
+    lJSON := StrToJSONObject(AResponse.Content);
+    try
+      lMsg := lJSON.S['message'];
+    finally
+      lJSON.Free
+    end;
+  end
   else
-    MessageDlg(
-      AResponse.StatusCode.ToString + ': ' + AResponse.StatusText + sLineBreak +
-      AResponse.Content,
-      mtError, [mbOK], 0);
+  begin
+    lMsg := AResponse.StatusCode.ToString + ': ' +
+            AResponse.StatusText + sLineBreak + '[' + AResponse.Content + ']';
+  end;
+  MessageDlg(lMsg, mtError, [mbOK], 0);
 end;
 
 end.

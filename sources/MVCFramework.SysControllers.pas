@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -37,6 +37,31 @@ uses
   MVCFramework,
   MVCFramework.Commons, MVCFramework.Swagger.Commons;
 
+const
+  DESCRIBE_PLATFORM_RESPONSE_SWAGGER_SCHEMA =
+    '{' + sLineBreak +
+    '    "type": "object",' + sLineBreak +
+    '    "properties": {' + sLineBreak +
+    '        "OS": {' + sLineBreak +
+    '            "type": "string",' + sLineBreak +
+    '            "description": "Operating System Information"' + sLineBreak +
+    '        },' + sLineBreak +
+    '        "CPU_count": {' + sLineBreak +
+    '            "type": "integer",' + sLineBreak +
+    '            "description": "Numbers of cores available "' + sLineBreak +
+    '        },' + sLineBreak +
+    '        "CPU_architecture": {' + sLineBreak +
+    '            "type": "string",' + sLineBreak +
+    '            "description": "CPU''s Architecture"' + sLineBreak +
+    '        },' + sLineBreak +
+    '        "system_time": {' + sLineBreak +
+    '            "type": "string",' + sLineBreak +
+    '            "description": "Server timestamp"' + sLineBreak +
+    '        }' + sLineBreak +
+    '    }' + sLineBreak +
+    '}';
+
+
 type
 
   [MVCPath('/system')]
@@ -52,25 +77,31 @@ type
     [MVCHTTPMethods([httpGET])]
     [MVCDoc('Describe controllers and actions published by the RESTful server per resources')]
     [MVCSwagSummary('DMVCFramework System Controller', 'Describe controllers and actions published by the RESTful server per resources')]
+    [MVCSwagResponses(HTTP_STATUS.InternalServerError, 'Internal server error', TMVCErrorResponse)]
+    [MVCSwagResponses(HTTP_STATUS.OK, 'OK')]
     procedure DescribeServer;
 
     [MVCPath('/describeplatform.info')]
     [MVCDoc('Describe the system where server is running')]
     [MVCHTTPMethods([httpGET])]
     [MVCSwagSummary('DMVCFramework System Controller', 'Describe the system where server is running')]
+    [MVCSwagResponses(HTTP_STATUS.InternalServerError, 'Internal server error', TMVCErrorResponse)]
+    [MVCSwagResponses(HTTP_STATUS.OK, 'OK', DESCRIBE_PLATFORM_RESPONSE_SWAGGER_SCHEMA)]
     procedure DescribePlatform;
 
     [MVCPath('/serverconfig.info')]
     [MVCHTTPMethods([httpGET])]
     [MVCDoc('Server configuration')]
     [MVCSwagSummary('DMVCFramework System Controller', 'Server configuration')]
+    [MVCSwagResponses(HTTP_STATUS.InternalServerError, 'Internal server error', TMVCErrorResponse)]
+    [MVCSwagResponses(HTTP_STATUS.OK, 'OK')]
     procedure ServerConfig;
   end;
 
 implementation
 
 uses
-  JsonDataObjects;
+  JsonDataObjects, MVCFramework.ActiveRecord;
 
 function MSecToTime(mSec: Int64): string;
 const
@@ -141,6 +172,12 @@ begin
       for LController in Engine.Controllers do
       begin
         lControllerClassName := LController.Clazz.QualifiedClassName;
+        if lControllerClassName.EndsWith('TMVCActiveRecordController') then
+        begin
+          LJoResp.O[lControllerClassName].S['description'] := 'Automatic CRUD API for entities: ' +
+            String.Join(',', ActiveRecordMappingRegistry.GetEntities);
+        end;
+
         LRttiType := LRttiCtx.GetType(LController.Clazz) as TRttiInstanceType;
         for LAttribute in LRttiType.GetAttributes do
         begin
@@ -150,9 +187,14 @@ begin
             LJoResp.O[lControllerClassName].S['description'] := MVCDocAttribute(LAttribute).Value;
         end;
 
+        if not LController.URLSegment.IsEmpty then
+        begin
+          LJoResp.O[lControllerClassName].S['resource_path'] := LController.URLSegment;
+        end;
+
         LJaMethods := LJoResp.O[lControllerClassName].A['actions']; // TJSONArray.Create;
         // LJoControllerInfo.AddPair('actions', LJaMethods);
-        LMethods := LRttiType.GetDeclaredMethods;
+        LMethods := LRttiType.GetMethods;
         for LMethod in LMethods do
         begin
           LFoundAttrib := False;

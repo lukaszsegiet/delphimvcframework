@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -37,9 +37,11 @@ type
     function RQLLimitToSQL(const aRQLLimit: TRQLLimit): string;
     function RQLWhereToSQL(const aRQLWhere: TRQLWhere): string;
     function RQLLogicOperatorToSQL(const aRQLFIlter: TRQLLogicOperator): string;
-    function RQLCustom2SQL(const aRQLCustom: TRQLCustom): string;
+  protected
+    function RQLCustom2SQL(const aRQLCustom: TRQLCustom): string; override;
   public
-    procedure AST2SQL(const aRQLAST: TRQLAbstractSyntaxTree; out aSQL: string); override;
+    function GetTableNameForSQL(const TableName: string): string; override;
+    function GetFieldNameForSQL(const FieldName: string): string; override;
   end;
 
 implementation
@@ -48,6 +50,11 @@ uses
   System.SysUtils;
 
 { TRQLMySQLCompiler }
+
+function TRQLMySQLCompiler.GetTableNameForSQL(const TableName: string): string;
+begin
+  Result := TableName.QuotedString('`');
+end;
 
 function TRQLMySQLCompiler.RQLCustom2SQL(
   const aRQLCustom: TRQLCustom): string;
@@ -80,7 +87,7 @@ function TRQLMySQLCompiler.RQLFilterToSQL(const aRQLFIlter: TRQLFilter): string;
 var
   lValue, lDBFieldName: string;
 begin
-  if (aRQLFIlter.RightValueType = vtString) and (aRQLFIlter.Token <> tkContains) then
+  if (aRQLFIlter.RightValueType = vtString) and not(aRQLFIlter.Token in [tkContains, tkStarts]) then
     lValue := aRQLFIlter.OpRight.QuotedString('''')
   else if aRQLFIlter.RightValueType = vtBoolean then
   begin
@@ -92,7 +99,7 @@ begin
   else
     lValue := aRQLFIlter.OpRight;
 
-  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft);
+  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft, True);
 
   case aRQLFIlter.Token of
     tkEq:
@@ -128,6 +135,11 @@ begin
     tkContains:
       begin
         lValue := Format('%%%s%%', [lValue]).QuotedString('''');
+        Result := Format('(LOWER(%s) LIKE %s)', [lDBFieldName, lValue.ToLower])
+      end;
+    tkStarts:
+      begin
+        lValue := Format('%s%%', [lValue]).QuotedString('''');
         Result := Format('(LOWER(%s) LIKE %s)', [lDBFieldName, lValue.ToLower])
       end;
     tkIn:
@@ -218,7 +230,7 @@ begin
   begin
     if I > 0 then
       Result := Result + ',';
-    Result := Result + ' ' + GetDatabaseFieldName(aRQLSort.Fields[I]);
+    Result := Result + ' ' + GetDatabaseFieldName(aRQLSort.Fields[I], True);
     if aRQLSort.Signs[I] = '+' then
       Result := Result + ' ASC'
     else
@@ -231,29 +243,15 @@ begin
   Result := ' where ';
 end;
 
-procedure TRQLMySQLCompiler.AST2SQL(const aRQLAST: TRQLAbstractSyntaxTree;
-  out aSQL: string);
-var
-  lBuff: TStringBuilder;
-  lItem: TRQLCustom;
+function TRQLMySQLCompiler.GetFieldNameForSQL(const FieldName: string): string;
 begin
-  inherited;
-
-  {
-    Here you can rearrange tokens in the list, for example:
-    For firebird and mysql syntax you have: filters, sort, limit (default)
-    For MSSQL syntax you need to rearrange in: limit, filters, sort
-  }
-
-  lBuff := TStringBuilder.Create;
-  try
-    for lItem in aRQLAST do
-    begin
-      lBuff.Append(RQLCustom2SQL(lItem));
-    end;
-    aSQL := lBuff.ToString;
-  finally
-    lBuff.Free;
+  if FieldName.Contains(' ') and (FieldName.Chars[0] <> '`') then
+  begin
+    Result := FieldName.QuotedString('`');
+  end
+  else
+  begin
+    Result := FieldName;
   end;
 end;
 

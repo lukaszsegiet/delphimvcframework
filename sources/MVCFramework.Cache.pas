@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -56,10 +56,13 @@ type
     constructor Create;
     destructor Destroy; override;
     function SetValue(const AName: string; const AValue: TValue): TMVCCacheItem;
+    procedure RemoveItem(const AName: string);
     function Contains(const AName: string; out AValue: TValue): Boolean;
     function ContainsItem(const AName: string; out AItem: TMVCCacheItem): Boolean;
     function GetValue(const AName: string): TValue;
     function ExecOnItemWithWriteLock(const AName: string; const AAction: TProc<TValue>): Boolean;
+    procedure BeginWrite;
+    procedure EndWrite;
   end;
 
   TMVCCacheSingleton = class
@@ -72,6 +75,17 @@ type
     class property Instance: TMVCCache read GetInstance;
     class constructor Create;
     class destructor Destroy;
+  end;
+
+  TMVCThreadedObjectCache<T: class> = class
+  private
+    fCS: TCriticalSection;
+    fItems: TObjectDictionary<String, T>;
+  public
+    constructor Create;
+    destructor Destroy; override;
+    function TryGetValue(const Key: String; out Value: T): Boolean;
+    procedure Add(const Key: String; const Value: T);
   end;
 
 implementation
@@ -112,6 +126,11 @@ begin
   Result := lCacheItem;
 end;
 
+procedure TMVCCache.EndWrite;
+begin
+  FMREW.EndWrite;
+end;
+
 function TMVCCache.ExecOnItemWithWriteLock(const AName: string; const AAction: TProc<TValue>): Boolean;
 var
   lItem: TMVCCacheItem;
@@ -129,6 +148,11 @@ begin
   end;
 end;
 
+procedure TMVCCache.BeginWrite;
+begin
+  FMREW.BeginWrite;
+end;
+
 function TMVCCache.Contains(const AName: string; out AValue: TValue): Boolean;
 var
   lItem: TMVCCacheItem;
@@ -138,8 +162,7 @@ begin
     AValue := lItem.Value;
 end;
 
-function TMVCCache.ContainsItem(const AName: string;
-out AItem: TMVCCacheItem): Boolean;
+function TMVCCache.ContainsItem(const AName: string; out AItem: TMVCCacheItem): Boolean;
 var
   lItem: TMVCCacheItem;
   lRes: Boolean;
@@ -183,6 +206,24 @@ begin
       end;
     end);
   Result := lResult;
+end;
+
+procedure TMVCCache.RemoveItem(const AName: string);
+begin
+  FMREW.DoWithWriteLock(
+    procedure
+    var
+      lItem: TMVCCacheItem;
+    begin
+      if FStorage.TryGetValue(AName, lItem) then
+      begin
+        if lItem.Value.IsObjectInstance then
+        begin
+          lItem.Value.AsObject.Free;
+        end;
+        FStorage.Remove(AName);
+      end
+    end);
 end;
 
 { TMVCFrameworkCacheItem }
@@ -241,6 +282,42 @@ begin
     end;
   end;
   Result := SInstance;
+end;
+
+{ TMVCThreadedObjectCache<T> }
+
+procedure TMVCThreadedObjectCache<T>.Add(const Key: String; const Value: T);
+begin
+  fCS.Enter;
+  try
+    fItems.Add(Key, Value);
+  finally
+    fCS.Leave;
+  end;
+end;
+
+constructor TMVCThreadedObjectCache<T>.Create;
+begin
+  inherited;
+  fCS := TCriticalSection.Create;
+  fItems := TObjectDictionary<String, T>.Create([doOwnsValues]);
+end;
+
+destructor TMVCThreadedObjectCache<T>.Destroy;
+begin
+  fItems.Free;
+  fCS.Free;
+  inherited;
+end;
+
+function TMVCThreadedObjectCache<T>.TryGetValue(const Key: String; out Value: T): Boolean;
+begin
+  fCS.Enter;
+  try
+    Result := fItems.TryGetValue(Key, Value);
+  finally
+    fCS.Leave;
+  end;
 end;
 
 end.

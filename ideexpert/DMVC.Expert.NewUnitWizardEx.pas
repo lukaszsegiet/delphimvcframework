@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -23,7 +23,7 @@
 // ***************************************************************************
 //
 // This IDE expert is based off of the one included with the DUnitX
-// project.  Original source by Robert Love.  Adapted by Nick Hodges.
+// project.  Original source by Robert Love.  Adapted by Nick Hodges and Daniele Teti.
 //
 // The DUnitX project is run by Vincent Parrett and can be found at:
 //
@@ -47,57 +47,59 @@ type
 
 implementation
 
+{$I ..\sources\dmvcframework.inc}
+
 uses
   DMVC.Expert.Forms.NewUnitWizard,
   DMVC.Expert.CodeGen.NewControllerUnit,
-  Vcl.Controls,
-  Vcl.Forms,
+  VCL.Controls,
+  VCL.Forms,
   WinApi.Windows,
-  ExpertsRepository;
+  ExpertsRepository, JsonDataObjects;
 
 resourcestring
- sNewDMVCUnitCaption = 'DelphiMVCFramework Controller';
- sNewDMVCProjectHint = 'Create New DelphiMVCFramework Controller Unit';
+  sNewDMVCUnitCaption = 'DelphiMVCFramework Controller';
+  sNewDMVCProjectHint = 'Create New DelphiMVCFramework Controller Unit';
 
-class procedure TDMVCNewUnitWizard.RegisterDMVCNewUnitWizard(const aPersonality: string);
+class procedure TDMVCNewUnitWizard.RegisterDMVCNewUnitWizard(const APersonality: string);
 begin
-  RegisterPackageWizard(TExpertsRepositoryProjectWizardWithProc.Create(aPersonality,
-                        sNewDMVCProjectHint, sNewDMVCUnitCaption, 'DMVC.Wizard.NewUnitWizard',  // do not localize
-                        'DMVCFramework', 'DMVCFramework Team - https://github.com/danieleteti/delphimvcframework', // do not localize
+  RegisterPackageWizard(TExpertsRepositoryProjectWizardWithProc.Create(APersonality, sNewDMVCProjectHint,
+    sNewDMVCUnitCaption, 'DMVC.Wizard.NewUnitWizard', // do not localize
+    'DMVCFramework', 'DMVCFramework Team - https://github.com/danieleteti/delphimvcframework', // do not localize
     procedure
     var
-      WizardForm     : TfrmDMVCNewUnit;
-      ModuleServices : IOTAModuleServices;
-      Project        : IOTAProject;
-      ControllerUnit : IOTAModule;
+      WizardForm: TfrmDMVCNewUnit;
+      ModuleServices: IOTAModuleServices;
+      Project: IOTAProject;
+      ControllerUnit: IOTAModule;
+      lJSON: TJSONObject;
     begin
       WizardForm := TfrmDMVCNewUnit.Create(Application);
       try
         if WizardForm.ShowModal = mrOk then
         begin
+          lJSON := WizardForm.GetConfigModel;
           ModuleServices := (BorlandIDEServices as IOTAModuleServices);
-          Project :=  GetActiveProject;
+          Project := GetActiveProject;
           ControllerUnit := ModuleServices.CreateModule(
-                           TNewControllerUnitEx.Create(WizardForm.CreateIndexMethod,
-                                                       WizardForm.CreateCRUDMethods,
-                                                       WizardForm.CreateActionFiltersMethods,
-                                                       WizardForm.ControllerClassName,
-                                                       aPersonality));
+            TNewControllerUnitEx.Create(lJSON, APersonality));
           if Project <> nil then
           begin
-            Project.AddFile(ControllerUnit.FileName,true);
+            Project.AddFile(ControllerUnit.FileName, true);
           end;
         end;
       finally
         WizardForm.Free;
       end;
     end,
-            function: Cardinal
-            begin
-              Result := LoadIcon(HInstance,'DMVCNewUnitIcon');
-            end,
-            TArray<string>.Create(cWin32Platform, cWin64Platform),
-            nil));
- end;
+    function: Cardinal
+    begin
+      Result := LoadIcon(HInstance, 'DMVCNewUnitIcon');
+    end, TArray<string>.Create(cWin32Platform, cWin64Platform
+    {$IF Defined(TOKYOORBETTER)}
+    , cLinux64Platform
+    {$ENDIF}
+    ), nil));
+end;
 
 end.

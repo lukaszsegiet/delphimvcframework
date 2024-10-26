@@ -1,6 +1,28 @@
+// *************************************************************************** }
+//
+// LoggerPro
+//
+// Copyright (c) 2010-2024 Daniele Teti
+//
+// https://github.com/danieleteti/loggerpro
+//
+// ***************************************************************************
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// ***************************************************************************
+
 unit LoggerPro.OutputDebugStringAppender;
-{ <@abstract(The unit to include if you want to use @link(TLoggerProOutputDebugStringAppender))
-  @author(Daniele Teti) }
 
 interface
 
@@ -13,9 +35,11 @@ type
   }
   TLoggerProOutputDebugStringAppender = class(TLoggerProAppenderBase)
   private
+    {$IFDEF MSWINDOWS}
     FModuleName: string;
+    {$ENDIF}
   public
-    constructor Create; override;
+    constructor Create(aLogItemRenderer: ILogItemRenderer = nil); override;
     procedure Setup; override;
     procedure TearDown; override;
     procedure WriteLog(const aLogItem: TLogItem); override;
@@ -32,17 +56,16 @@ uses
 {$ENDIF}
   ;
 
-{ TStringsLogAppender }
-const
-  DEFAULT_LOG_FORMAT = '%0:s [TID %1:-8d][%2:-10s] %3:s [%4:s]';
+{ TLoggerProOutputDebugStringAppender }
 
-constructor TLoggerProOutputDebugStringAppender.Create;
+constructor TLoggerProOutputDebugStringAppender.Create(aLogItemRenderer: ILogItemRenderer);
 begin
-  inherited Create;
+  inherited;
 end;
 
 procedure TLoggerProOutputDebugStringAppender.Setup;
 begin
+  inherited;
 {$IFDEF MSWINDOWS}
   FModuleName := TPath.GetFileName(GetModuleName(HInstance));
 {$ENDIF}
@@ -53,17 +76,14 @@ begin
   // do nothing
 end;
 
-procedure TLoggerProOutputDebugStringAppender.WriteLog(const aLogItem
-  : TLogItem);
+procedure TLoggerProOutputDebugStringAppender.WriteLog(const aLogItem : TLogItem);
 {$IFDEF MSWINDOWS}
 var
   lLog: string;
 {$ENDIF}
 begin
 {$IFDEF MSWINDOWS}
-  lLog := '(' + FModuleName + ') ' + Format(DEFAULT_LOG_FORMAT,
-    [datetimetostr(aLogItem.TimeStamp), aLogItem.ThreadID,
-    aLogItem.LogTypeAsString, aLogItem.LogMessage, aLogItem.LogTag]);
+  lLog := '(' + FModuleName + ') ' + FormatLog(aLogItem);
   OutputDebugString(PChar(lLog));
 {$ENDIF}
 end;

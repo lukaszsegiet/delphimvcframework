@@ -1,12 +1,12 @@
-// ***************************************************************************
+﻿// ***************************************************************************
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
-// Collaborators on this file: Ezequiel Juliano M�ller (ezequieljuliano@gmail.com)
+// Collaborators on this file: Ezequiel Juliano Müller (ezequieljuliano@gmail.com)
 //
 // ***************************************************************************
 //
@@ -37,18 +37,20 @@ uses
   System.RegularExpressions,
   MVCFramework,
   MVCFramework.Commons,
-  IdURI;
+  IdURI, System.Classes;
 
 type
   TMVCActionParamCacheItem = class
   private
     FValue: string;
-    FParams: TList<string>;
+    FParams: TList<TPair<String, String>>;
+    FRegEx: TRegEx;
   public
-    constructor Create(aValue: string; aParams: TList<string>); virtual;
+    constructor Create(aValue: string; aParams: TList<TPair<String, String>>); virtual;
     destructor Destroy; override;
     function Value: string;
-    function Params: TList<string>; // this should be read-only...
+    function Params: TList<TPair<String, String>>; // this should be read-only...
+    function Match(const Value: String): TMatch; inline;
   end;
 
   TMVCRouter = class(TMVCCustomRouter)
@@ -58,6 +60,7 @@ type
     FMethodToCall: TRttiMethod;
     FControllerClazz: TMVCControllerClazz;
     FControllerCreateAction: TMVCControllerCreateAction;
+    FControllerInjectableConstructor: TRttiMethod;
     FActionParamsCache: TMVCStringObjectDictionary<TMVCActionParamCacheItem>;
     function GetAttribute<T: TCustomAttribute>(const AAttributes: TArray<TCustomAttribute>): T;
     function GetFirstMediaType(const AContentType: string): string;
@@ -79,24 +82,25 @@ type
     function IsCompatiblePath(
       const AMVCPath: string;
       const APath: string;
-      var AParams: TMVCRequestParamsTable): Boolean;
-    function GetParametersNames(const V: string): TList<string>;
+      var aParams: TMVCRequestParamsTable): Boolean;
+    function GetParametersNames(const V: string): TList<TPair<string, string>>;
   protected
-    function GetControllerMappedPath(
+    procedure FillControllerMappedPaths(
       const aControllerName: string;
-      const aControllerAttributes: TArray<TCustomAttribute>): string;
+      const aControllerAttributes: TArray<TCustomAttribute>;
+      const aControllerMappedPaths: TStringList);
   public
-    class function StringMethodToHTTPMetod(const AValue: string): TMVCHTTPMethodType; static;
-    constructor Create(const aConfig: TMVCConfig; const aActionParamsCache: TMVCStringObjectDictionary<TMVCActionParamCacheItem>);
+    class function StringMethodToHTTPMetod(const aValue: string): TMVCHTTPMethodType; static;
+    constructor Create(const aConfig: TMVCConfig;
+      const aActionParamsCache: TMVCStringObjectDictionary<TMVCActionParamCacheItem>);
     destructor Destroy; override;
-    function ExecuteRouting(
-      const ARequestPathInfo: string;
+    function ExecuteRouting(const ARequestPathInfo: string;
       const ARequestMethodType: TMVCHTTPMethodType;
-      const ARequestContentType: string;
-      const ARequestAccept: string;
+      const ARequestContentType, ARequestAccept: string;
       const AControllers: TObjectList<TMVCControllerDelegate>;
       const ADefaultContentType: string;
       const ADefaultContentCharset: string;
+      const APathPrefix: string;
       var ARequestParams: TMVCRequestParamsTable;
       out AResponseContentMediaType: string;
       out AResponseContentCharset: string): Boolean;
@@ -105,20 +109,23 @@ type
     property MethodToCall: TRttiMethod read FMethodToCall;
     property ControllerClazz: TMVCControllerClazz read FControllerClazz;
     property ControllerCreateAction: TMVCControllerCreateAction read FControllerCreateAction;
+    property ControllerInjectableConstructor: TRttiMethod read FControllerInjectableConstructor;
   end;
 
 implementation
 
 uses
-  System.TypInfo;
+  System.TypInfo,
+  System.NetEncoding, MVCFramework.Rtti.Utils, MVCFramework.Container;
 
 { TMVCRouter }
 
-constructor TMVCRouter.Create(const aConfig: TMVCConfig; const aActionParamsCache: TMVCStringObjectDictionary<TMVCActionParamCacheItem>);
+constructor TMVCRouter.Create(const aConfig: TMVCConfig;
+  const aActionParamsCache: TMVCStringObjectDictionary<TMVCActionParamCacheItem>);
 begin
   inherited Create;
   FRttiContext := TRttiContext.Create;
-  FConfig := AConfig;
+  FConfig := aConfig;
   FMethodToCall := nil;
   FControllerClazz := nil;
   FControllerCreateAction := nil;
@@ -137,6 +144,7 @@ function TMVCRouter.ExecuteRouting(const ARequestPathInfo: string;
   const AControllers: TObjectList<TMVCControllerDelegate>;
   const ADefaultContentType: string;
   const ADefaultContentCharset: string;
+  const APathPrefix: string;
   var ARequestParams: TMVCRequestParamsTable;
   out AResponseContentMediaType: string;
   out AResponseContentCharset: string): Boolean;
@@ -145,16 +153,21 @@ var
   LRequestAccept: string;
   LRequestContentType: string;
   LControllerMappedPath: string;
+  LControllerMappedPaths: TStringList;
   LControllerDelegate: TMVCControllerDelegate;
   LAttributes: TArray<TCustomAttribute>;
   LAtt: TCustomAttribute;
   LRttiType: TRttiType;
-  LMethods: TArray<TRTTIMethod>;
-  LMethod: TRTTIMethod;
+  LMethods: TArray<TRttiMethod>;
+  LMethod: TRttiMethod;
   LMethodPath: string;
   LProduceAttribute: MVCProducesAttribute;
-  lPathPrefix: string;
   lURLSegment: string;
+  LItem: String;
+  // JUST FOR DEBUG
+  // lMethodCompatible: Boolean;
+  // lContentTypeCompatible: Boolean;
+  // lAcceptCompatible: Boolean;
 begin
   Result := False;
 
@@ -174,94 +187,114 @@ begin
       LRequestPathInfo := '/' + LRequestPathInfo;
     end;
   end;
-  LRequestPathInfo := TIdURI.PathEncode(LRequestPathInfo);
-
-  { CHANGE THE REQUEST PATH INFO START }
-  lPathPrefix := FConfig.Value[TMVCConfigKey.PathPrefix];
-  if not lPathPrefix.IsEmpty then
-  begin
-    if string(LRequestPathInfo).StartsWith(lPathPrefix) then
-      LRequestPathInfo := LRequestPathInfo.Remove(0, lPathPrefix.Length);
-    if Length(LRequestPathInfo) = 0 then
-      LRequestPathInfo := '/';
-  end;
-  { CHANGE THE REQUEST PATH INFO END }
+  LRequestPathInfo := TIdURI.PathEncode(Trim(LRequestPathInfo)); //regression introduced in fix for issue 492
 
   TMonitor.Enter(gLock);
   try
-    LControllerMappedPath := EmptyStr;
-    for LControllerDelegate in AControllers do
-    begin
-      SetLength(LAttributes, 0);
-      LRttiType := FRttiContext.GetType(LControllerDelegate.Clazz.ClassInfo);
-
-      lURLSegment := LControllerDelegate.URLSegment;
-      if lURLSegment.IsEmpty then
+    LControllerMappedPaths := TStringList.Create;
+    try
+      for LControllerDelegate in AControllers do
       begin
-        LAttributes := LRttiType.GetAttributes;
-        if (LAttributes = nil) then
-          Continue;
-        LControllerMappedPath := GetControllerMappedPath(LRttiType.Name, LAttributes);
-      end
-      else
-      begin
-        LControllerMappedPath := lURLSegment;
-      end;
+        LControllerMappedPaths.Clear;
+        SetLength(LAttributes, 0);
+        LRttiType := FRttiContext.GetType(LControllerDelegate.Clazz.ClassInfo);
 
-      if (LControllerMappedPath = '/') then
-      begin
-        LControllerMappedPath := '';
-      end;
-
-      if not LRequestPathInfo.StartsWith(LControllerMappedPath, True) then
-      begin
-        Continue;
-      end;
-
-      LMethods := LRttiType.GetMethods; {do not use GetDeclaredMethods because JSON-RPC rely on this!!}
-      for LMethod in LMethods do
-      begin
-        if LMethod.Visibility <> mvPublic then //2020-08-08
-          Continue;
-        if (LMethod.MethodKind <> mkProcedure) {or LMethod.IsClassMethod} then
-          Continue;
-
-        LAttributes := LMethod.GetAttributes;
-        if Length(LAttributes) = 0 then
-          Continue;
-
-        for LAtt in LAttributes do
+        lURLSegment := LControllerDelegate.URLSegment;
+        if lURLSegment.IsEmpty then
         begin
-          if LAtt is MVCPathAttribute then
+          LAttributes := LRttiType.GetAttributes;
+          if (LAttributes = nil) then
+            Continue;
+          FillControllerMappedPaths(LRttiType.Name, LAttributes, LControllerMappedPaths);
+        end
+        else
+        begin
+          LControllerMappedPaths.Add(lURLSegment);
+        end;
+
+        for LItem in LControllerMappedPaths do
+        begin
+          LControllerMappedPath := LItem;
+          if (LControllerMappedPath = '/') then
           begin
-            if IsHTTPMethodCompatible(ARequestMethodType, LAttributes) and
-              IsHTTPContentTypeCompatible(ARequestMethodType, LRequestContentType, LAttributes) and
-              IsHTTPAcceptCompatible(ARequestMethodType, LRequestAccept, LAttributes) then
+            LControllerMappedPath := '';
+          end;
+
+    {$IF defined(TOKYOORBETTER)}
+          if not LRequestPathInfo.StartsWith(APathPrefix + LControllerMappedPath, True) then
+    {$ELSE}
+          if not TMVCStringHelper.StartsWith(APathPrefix + LControllerMappedPath, LRequestPathInfo, True) then
+    {$ENDIF}
+          begin
+            Continue;
+          end;
+          LMethods := LRttiType.GetMethods; { do not use GetDeclaredMethods because JSON-RPC rely on this!! }
+          for LMethod in LMethods do
+          begin
+            if LMethod.Visibility <> mvPublic then // 2020-08-08
+              Continue;
+            if not (LMethod.MethodKind in [mkProcedure, mkFunction]) then
+              Continue;
+
+            LAttributes := LMethod.GetAttributes;
+            if Length(LAttributes) = 0 then
+              Continue;
+
+            for LAtt in LAttributes do
             begin
-              LMethodPath := MVCPathAttribute(LAtt).Path;
-              if IsCompatiblePath(LControllerMappedPath + LMethodPath, LRequestPathInfo, ARequestParams) then
+              if LAtt is MVCPathAttribute then
               begin
-                FMethodToCall := LMethod;
-                FControllerClazz := LControllerDelegate.Clazz;
-                FControllerCreateAction := LControllerDelegate.CreateAction;
-                LProduceAttribute := GetAttribute<MVCProducesAttribute>(LAttributes);
-                if LProduceAttribute <> nil then
+                // THIS BLOCK IS HERE JUST FOR DEBUG
+                // if LMethod.Name.Contains('GetProject') then
+                // begin
+                // lMethodCompatible := True; //debug here
+                // end;
+                // lMethodCompatible := IsHTTPMethodCompatible(ARequestMethodType, LAttributes);
+                // lContentTypeCompatible := IsHTTPContentTypeCompatible(ARequestMethodType, LRequestContentType, LAttributes);
+                // lAcceptCompatible :=  IsHTTPAcceptCompatible(ARequestMethodType, LRequestAccept, LAttributes);
+
+                if IsHTTPMethodCompatible(ARequestMethodType, LAttributes) and
+                  IsHTTPContentTypeCompatible(ARequestMethodType, LRequestContentType, LAttributes) and
+                  IsHTTPAcceptCompatible(ARequestMethodType, LRequestAccept, LAttributes) then
                 begin
-                  AResponseContentMediaType := LProduceAttribute.Value;
-                  AResponseContentCharset := LProduceAttribute.Charset;
-                end
-                else
-                begin
-                  AResponseContentMediaType := ADefaultContentType;
-                  AResponseContentCharset := ADefaultContentCharset;
+                  LMethodPath := MVCPathAttribute(LAtt).Path;
+                  if IsCompatiblePath(APathPrefix + LControllerMappedPath + LMethodPath,
+                    LRequestPathInfo, ARequestParams) then
+                  begin
+                    FMethodToCall := LMethod;
+                    FControllerClazz := LControllerDelegate.Clazz;
+                    FControllerCreateAction := LControllerDelegate.CreateAction;
+                    FControllerInjectableConstructor := nil;
+
+                    // select the constructor with the most mumber of parameters
+                    if not Assigned(FControllerCreateAction) then
+                    begin
+                      FControllerInjectableConstructor := TRttiUtils.GetConstructorWithAttribute<MVCInjectAttribute>(LRttiType);
+                    end;
+                    // end - select the constructor with the most mumber of parameters
+
+                    LProduceAttribute := GetAttribute<MVCProducesAttribute>(LAttributes);
+                    if LProduceAttribute <> nil then
+                    begin
+                      AResponseContentMediaType := LProduceAttribute.Value;
+                      AResponseContentCharset := LProduceAttribute.Charset;
+                    end
+                    else
+                    begin
+                      AResponseContentMediaType := ADefaultContentType;
+                      AResponseContentCharset := ADefaultContentCharset;
+                    end;
+                    Exit(True);
+                  end;
                 end;
-                Exit(True);
-              end;
-            end;
-          end; //if MVCPathAttribute
-        end; //for in Attributes
-      end; //for in Methods
-    end; //for in Controllers
+              end; // if MVCPathAttribute
+            end; // for in Attributes
+          end; // for in Methods
+        end;
+      end; // for in Controllers
+    finally
+      LControllerMappedPaths.Free;
+    end;
   finally
     TMonitor.Exit(gLock);
   end;
@@ -277,9 +310,10 @@ begin
       Exit(T(Att));
 end;
 
-function TMVCRouter.GetControllerMappedPath(
-  const aControllerName: string;
-  const aControllerAttributes: TArray<TCustomAttribute>): string;
+procedure TMVCRouter.FillControllerMappedPaths(
+      const aControllerName: string;
+      const aControllerAttributes: TArray<TCustomAttribute>;
+      const aControllerMappedPaths: TStringList);
 var
   LFound: Boolean;
   LAtt: TCustomAttribute;
@@ -290,13 +324,13 @@ begin
     if LAtt is MVCPathAttribute then
     begin
       LFound := True;
-      Result := MVCPathAttribute(LAtt).Path;
-      Break;
+      aControllerMappedPaths.Add(MVCPathAttribute(LAtt).Path);
     end;
   end;
-
   if not LFound then
+  begin
     raise EMVCException.CreateFmt('Controller %s does not have MVCPath attribute', [aControllerName]);
+  end;
 end;
 
 function TMVCRouter.GetFirstMediaType(const AContentType: string): string;
@@ -311,72 +345,123 @@ end;
 function TMVCRouter.IsCompatiblePath(
   const AMVCPath: string;
   const APath: string;
-  var AParams: TMVCRequestParamsTable): Boolean;
+  var aParams: TMVCRequestParamsTable): Boolean;
 
-  function ToPattern(const V: string; const Names: TList<string>): string;
+  function ToPattern(const V: string; const Names: TList<TPair<String, String>>): string;
   var
-    S: string;
+    S: TPair<String, String>;
   begin
     Result := V;
-    for S in Names do
-      Result := StringReplace(Result, '($' + S + ')', '([' + TMVCConstants.URL_MAPPED_PARAMS_ALLOWED_CHARS + ']*)', [rfReplaceAll]);
+    if Names.Count > 0 then
+    begin
+      for S in Names do
+      begin
+        Result := StringReplace(
+          Result,
+          '($' + S.Key + S.Value + ')', '([' + TMVCConstants.URL_MAPPED_PARAMS_ALLOWED_CHARS + ']*)',
+          [rfReplaceAll]);
+      end;
+    end;
   end;
 
 var
-  lRegEx: TRegEx;
   lMatch: TMatch;
   lPattern: string;
   I: Integer;
-  lNames: TList<string>;
+  lNames: TList<TPair<String, String>>;
   lCacheItem: TMVCActionParamCacheItem;
+  P: TPair<string, string>;
+  lConv: string;
+  lParValue: String;
 begin
+  if (APath = AMVCPath) or ((APath = '/') and (AMVCPath = '')) then
+  begin
+    Exit(True);
+  end;
+
   if not FActionParamsCache.TryGetValue(AMVCPath, lCacheItem) then
   begin
     lNames := GetParametersNames(AMVCPath);
     lPattern := ToPattern(AMVCPath, lNames);
-    lCacheItem := TMVCActionParamCacheItem.Create(lPattern, lNames);
-    FActionParamsCache.Add(AMVCPath, lCacheItem);
+    lCacheItem := TMVCActionParamCacheItem.Create('^' + lPattern + '$', lNames);
+    FActionParamsCache.Add(AMVCPath, lCacheItem); {do not commit this!}
   end;
 
-  if (APath = AMVCPath) then
-    Exit(True)
-  else
+  lMatch := lCacheItem.Match(APath);
+  Result := lMatch.Success;
+  if Result then
   begin
-    lRegEx := TRegEx.Create('^' + lCacheItem.Value + '$', [roIgnoreCase, roCompiled, roSingleLine]);
-    lMatch := lRegEx.match(APath);
-    Result := lMatch.Success;
-    if Result then
+    for I := 1 to Pred(lMatch.Groups.Count) do
     begin
-      for I := 1 to pred(lMatch.Groups.Count) do
+      P := lCacheItem.Params[I - 1];
+
+      {
+        P.Key = Parameter name
+        P.Value = Converter applied to the value before to be injected (eg. :sqid)
+      }
+
+      lParValue := TIdURI.URLDecode(lMatch.Groups[I].Value);
+      if P.Value.IsEmpty then
       begin
-        AParams.Add(lCacheItem.Params[I - 1], TIdURI.URLDecode(lMatch.Groups[I].Value));
+        {no converter}
+        aParams.Add(P.Key, lParValue);
+      end
+      else
+      begin
+        lConv := P.Value;
+        if SameText(lConv, ':sqids') then
+        begin
+          {sqids converter (so far the only one)}
+          aParams.Add(P.Key, TMVCSqids.SqidToInt(lParValue).ToString);
+        end
+        else
+        begin
+          raise EMVCException.CreateFmt('Unknown converter [%s]', [lConv]);
+        end;
       end;
     end;
   end;
 end;
 
-function TMVCRouter.GetParametersNames(const V: string): TList<string>;
+function TMVCRouter.GetParametersNames(const V: string): TList<TPair<string, string>>;
 var
   S: string;
   Matches: TMatchCollection;
   M: TMatch;
   I: Integer;
-  lList: TList<string>;
+  lList: TList<TPair<string, string>>;
+  lNameFound: Boolean;
+  lConverter: string;
+  lName: string;
 begin
-  lList := TList<string>.Create;
+  lList := TList<TPair<string, string>>.Create;
   try
-    S := '\(\$([A-Za-z0-9\_]+)\)';
+    S := '\(\$([A-Za-z0-9\_]+)(\:[a-z]+)?\)';
     Matches := TRegEx.Matches(V, S, [roIgnoreCase, roCompiled, roSingleLine]);
     for M in Matches do
     begin
+      lNameFound := False;
+      lConverter := '';
       for I := 0 to M.Groups.Count - 1 do
       begin
         S := M.Groups[I].Value;
-        if (Length(S) > 0) and (S.Chars[0] <> '(') then
+        if Length(S) > 0 then
         begin
-          lList.Add(S);
-          Break;
+          if (not lNameFound) and (S.Chars[0] <> '(') and (S.Chars[0] <> ':') then
+          begin
+            lName := S;
+            lNameFound := True;
+            Continue;
+          end;
+          if lNameFound and (S.Chars[0] = ':') then
+          begin
+            lConverter := S;
+          end;
         end;
+      end;
+      if lNameFound then
+      begin
+        lList.Add(TPair<string,string>.Create(lName,lConverter));
       end;
     end;
     Result := lList;
@@ -401,7 +486,7 @@ var
   FoundOneAttProduces: Boolean;
 begin
   Result := False;
-  if AAccept.Contains('*/*') then //2020-08-08
+  if AAccept.Contains('*/*') then // 2020-08-08
   begin
     Exit(True);
   end;
@@ -472,35 +557,36 @@ begin
   Result := (not MustBeCompatible) or (MustBeCompatible and Result);
 end;
 
-class function TMVCRouter.StringMethodToHTTPMetod(const AValue: string): TMVCHTTPMethodType;
+class function TMVCRouter.StringMethodToHTTPMetod(const aValue: string): TMVCHTTPMethodType;
 begin
-  if AValue = 'GET' then
+  if aValue = 'GET' then
     Exit(httpGET);
-  if AValue = 'POST' then
+  if aValue = 'POST' then
     Exit(httpPOST);
-  if AValue = 'DELETE' then
+  if aValue = 'DELETE' then
     Exit(httpDELETE);
-  if AValue = 'PUT' then
+  if aValue = 'PUT' then
     Exit(httpPUT);
-  if AValue = 'HEAD' then
+  if aValue = 'HEAD' then
     Exit(httpHEAD);
-  if AValue = 'OPTIONS' then
+  if aValue = 'OPTIONS' then
     Exit(httpOPTIONS);
-  if AValue = 'PATCH' then
+  if aValue = 'PATCH' then
     Exit(httpPATCH);
-  if AValue = 'TRACE' then
+  if aValue = 'TRACE' then
     Exit(httpTRACE);
-  raise EMVCException.CreateFmt('Unknown HTTP method [%s]', [AValue]);
+  raise EMVCException.CreateFmt('Unknown HTTP method [%s]', [aValue]);
 end;
 
 { TMVCActionParamCacheItem }
 
 constructor TMVCActionParamCacheItem.Create(aValue: string;
-  aParams: TList<string>);
+  aParams: TList<TPair<String, String>>);
 begin
   inherited Create;
-  FValue := aValue;
-  FParams := aParams;
+  fValue := aValue;
+  fParams := aParams;
+  fRegEx := TRegEx.Create(FValue, [roIgnoreCase, roCompiled, roSingleLine]);
 end;
 
 destructor TMVCActionParamCacheItem.Destroy;
@@ -509,7 +595,12 @@ begin
   inherited;
 end;
 
-function TMVCActionParamCacheItem.Params: TList<string>;
+function TMVCActionParamCacheItem.Match(const Value: String): TMatch;
+begin
+  Result := fRegEx.Match(Value);
+end;
+
+function TMVCActionParamCacheItem.Params: TList<TPair<String, String>>;
 begin
   Result := FParams;
 end;
@@ -520,4 +611,3 @@ begin
 end;
 
 end.
-

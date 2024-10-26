@@ -1,29 +1,112 @@
+// ***************************************************************************
+//
+// Delphi MVC Framework
+//
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+//
+// https://github.com/danieleteti/delphimvcframework
+//
+// ***************************************************************************
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// *************************************************************************** }
+
 unit TestServerControllerJSONRPCU;
 
 interface
 
 uses
-  MVCFramework, MVCFramework.Commons, MVCFramework.JSONRPC, JsonDataObjects;
+  MVCFramework, MVCFramework.Commons, MVCFramework.JSONRPC, JsonDataObjects,
+  BusinessObjectsU;
 
 type
   TTestJSONRPCController = class(TMVCJSONRPCController)
   public
+    [MVCInheritable]
     function Subtract(Value1, Value2: Int64): Integer;
+    [MVCInheritable]
     procedure MyNotify;
+    [MVCInheritable]
     function MyRequest: Boolean;
+    [MVCInheritable]
     function Add(Value1, Value2, Value3: Int64): TJsonObject;
+    [MVCInheritable]
     function GetListFromTo(aFrom, aTo: Int64): TJsonArray;
+    [MVCInheritable]
     function MultiplyString(aString: string; Multiplier: Int64): string;
+
+  end;
+
+  [MVCJSONRPCAllowGET]
+  TTestJSONRPCControllerWithGet = class(TTestJSONRPCController)
+
   end;
 
   TTestJSONRPCClass = class(TObject)
   public
+    [MVCInheritable]
     function Subtract(Value1, Value2: Int64): Integer;
+    [MVCInheritable]
     procedure MyNotify;
+    [MVCInheritable]
     function Add(Value1, Value2, Value3: Int64): TJsonObject;
+    [MVCInheritable]
     function GetListFromTo(aFrom, aTo: Int64): TJsonArray;
+    [MVCInheritable]
     function MultiplyString(aString: string; Multiplier: Int64): string;
+    [MVCInheritable]
     function AddTimeToDateTime(aDateTime: TDateTime; aTime: TTime): TDateTime;
+
+    //exceptions
+    [MVCInheritable]
+    function DoError(MyObj: TPerson): TPerson;
+
+    //objects support
+    [MVCInheritable]
+    function HandlingObjects(MyObj: TPerson): TPerson;
+
+
+    //enums support
+    [MVCInheritable]
+    function ProcessEnums(Value1: TEnumTest; Value2: TEnumTest): TEnumTest;
+
+    //sets support
+    [MVCInheritable]
+    function ProcessSets(Value1: TSetOfEnumTest; Value2: TEnumTest): TSetOfEnumTest;
+
+    //records support
+    [MVCInheritable]
+    function GetSingleRecord: TSimpleRecord;
+    [MVCInheritable]
+    function GetArrayOfRecords: TArray<TSimpleRecord>;
+    [MVCInheritable]
+    function EchoSingleRecord(const SimpleRecord: TSimpleRecord): TSimpleRecord;
+    [MVCInheritable]
+    function GetSingleComplexRecord: TComplexRecord;
+    [MVCInheritable]
+    function EchoSingleComplexRecord(const ComplexRecord: TComplexRecord): TComplexRecord;
+    [MVCInheritable]
+    function EchoArrayOfRecords(const ComplexRecordArray: TComplexRecordArray): TComplexRecordArray;
+
+    //issues
+    [MVCInheritable]
+    function GetTCustomer_ISSUE648: TCustomerIssue648;
+  end;
+
+  [MVCJSONRPCAllowGET]
+  TTestJSONRPCClassWithGET = class(TTestJSONRPCClass)
+
   end;
 
   TTestJSONRPCHookClass = class(TObject)
@@ -35,14 +118,25 @@ type
     procedure OnBeforeRoutingHook(const Context: TWebContext; const JSON: TJsonObject);
     procedure OnBeforeCallHook(const Context: TWebContext; const JSON: TJsonObject);
     procedure OnAfterCallHook(const Context: TWebContext; const JSON: TJsonObject);
+    [MVCInheritable]
     function error_OnBeforeRoutingHook: Boolean;
+    [MVCInheritable]
     function error_OnBeforeCallHook: Boolean;
+    [MVCInheritable]
     function error_OnAfterCallHook: Boolean;
-
+    [MVCInheritable]
     procedure Notif1;
+    [MVCInheritable]
     procedure NotifWithError;
+    [MVCInheritable]
     function Request1: string;
+    [MVCInheritable]
     function RequestWithError: string;
+  end;
+
+  [MVCJSONRPCAllowGET]
+  TTestJSONRPCHookClassWithGet = class(TTestJSONRPCHookClass)
+
   end;
 
 implementation
@@ -67,8 +161,38 @@ begin
     Result.Add(I);
 end;
 
-function TTestJSONRPCController.MultiplyString(aString: string;
-  Multiplier: Int64): string;
+function TTestJSONRPCClass.GetSingleComplexRecord: TComplexRecord;
+begin
+  Result := TComplexRecord.Create;
+end;
+
+function TTestJSONRPCClass.GetSingleRecord: TSimpleRecord;
+begin
+  Result := TSimpleRecord.Create;
+end;
+
+function TTestJSONRPCClass.GetTCustomer_ISSUE648: TCustomerIssue648;
+begin
+  Result.Id := 155;
+  Result.Added := Now;
+  Result.Name := 'Daniele Teti';
+  Result.ExpirationDate := Now + 7;
+  Result.MaxUpdateDate.Clear;
+  Result.AppVersion.Clear;
+  Result.Activated.Clear;
+end;
+
+function TTestJSONRPCClass.HandlingObjects(MyObj: TPerson): TPerson;
+begin
+  Result := TPerson.Create;
+  Result.ID := MyObj.ID;
+  Result.FirstName := MyObj.FirstName;
+  Result.LastName := MyObj.LastName;
+  Result.DOB := MyObj.DOB;
+  Result.Married := MyObj.Married;
+end;
+
+function TTestJSONRPCController.MultiplyString(aString: string; Multiplier: Int64): string;
 var
   I: Integer;
 begin
@@ -103,10 +227,44 @@ begin
   Result.I['res'] := Value1 + Value2 + Value3;
 end;
 
-function TTestJSONRPCClass.AddTimeToDateTime(aDateTime: TDateTime;
-  aTime: TTime): TDateTime;
+function TTestJSONRPCClass.AddTimeToDateTime(aDateTime: TDateTime; aTime: TTime): TDateTime;
 begin
   Result := aDateTime + aTime;
+end;
+
+function TTestJSONRPCClass.DoError(MyObj: TPerson): TPerson;
+begin
+  raise Exception.Create('BOOOM!! (TTestJSONRPCClass.DoError)');
+end;
+
+function TTestJSONRPCClass.EchoArrayOfRecords(
+  const ComplexRecordArray: TComplexRecordArray): TComplexRecordArray;
+begin
+  Result := ComplexRecordArray;
+end;
+
+function TTestJSONRPCClass.EchoSingleComplexRecord(
+  const ComplexRecord: TComplexRecord): TComplexRecord;
+begin
+  Result := ComplexRecord;
+end;
+
+function TTestJSONRPCClass.EchoSingleRecord(
+  const SimpleRecord: TSimpleRecord): TSimpleRecord;
+begin
+  Result := SimpleRecord;
+end;
+
+function TTestJSONRPCClass.GetArrayOfRecords: TArray<TSimpleRecord>;
+begin
+  SetLength(Result, 3);
+  Result[0] := TSimpleRecord.Create;
+  Result[1] := TSimpleRecord.Create;
+  Result[2] := TSimpleRecord.Create;
+
+  Result[0].IntegerProperty := 0;
+  Result[1].IntegerProperty := 1;
+  Result[2].IntegerProperty := 2;
 end;
 
 function TTestJSONRPCClass.GetListFromTo(aFrom, aTo: Int64): TJsonArray;
@@ -118,8 +276,7 @@ begin
     Result.Add(I);
 end;
 
-function TTestJSONRPCClass.MultiplyString(aString: string;
-  Multiplier: Int64): string;
+function TTestJSONRPCClass.MultiplyString(aString: string; Multiplier: Int64): string;
 var
   I: Integer;
 begin
@@ -134,6 +291,18 @@ procedure TTestJSONRPCClass.MyNotify;
 begin
   // this is a notify with no parameters and no result code
   Self.ClassName;
+end;
+
+function TTestJSONRPCClass.ProcessEnums(Value1, Value2: TEnumTest): TEnumTest;
+begin
+  Result := TEnumTest((Ord(Value1) + Ord(Value2)) mod 3);
+end;
+
+function TTestJSONRPCClass.ProcessSets(Value1: TSetOfEnumTest;
+  Value2: TEnumTest): TSetOfEnumTest;
+begin
+  Include(Value1, Value2);
+  Result := Value1;
 end;
 
 function TTestJSONRPCClass.Subtract(Value1, Value2: Int64): Integer;
@@ -212,7 +381,7 @@ end;
 
 procedure TTestJSONRPCHookClass.OnBeforeRoutingHook(const Context: TWebContext; const JSON: TJsonObject);
 begin
-  fJSONReq := JSON.Clone;
+  fJSONReq := JSON.Clone as TJsonObject;
 
   if SameText(JSON.S['method'], 'error_OnBeforeRoutingHook') then
     raise Exception.Create('error_OnBeforeRoutingHook');

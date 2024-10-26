@@ -1,0 +1,64 @@
+program SimpleRESTAPIUsingDatasets;
+
+{$APPTYPE CONSOLE}
+
+uses
+  System.SysUtils,
+  MVCFramework.Logger,
+  MVCFramework.Commons,
+  MVCFramework.Signal,
+  Web.ReqMulti,
+  Web.WebReq,
+  Web.WebBroker,
+  IdContext,
+  IdHTTPWebBrokerBridge,
+  CustomersControllerU in 'CustomersControllerU.pas',
+  MainWM in 'MainWM.pas' {TMunicipalLibraryWebModule: TWebModule},
+  MainDM in 'MainDM.pas' {CustomersDM: TDataModule};
+
+{$R *.res}
+
+
+procedure RunServer(APort: Integer);
+var
+  LServer: TIdHTTPWebBrokerBridge;
+begin
+  LogI('** DMVCFramework Server ** build ' + DMVCFRAMEWORK_VERSION);
+
+  LServer := TIdHTTPWebBrokerBridge.Create(nil);
+  try
+    LServer.OnParseAuthentication := TMVCParseAuthentication.OnParseAuthentication;
+    LServer.DefaultPort := APort;
+
+    { more info about MaxConnections
+      http://www.indyproject.org/docsite/html/frames.html?frmname=topic&frmfile=TIdCustomTCPServer_MaxConnections.html }
+    LServer.MaxConnections := 0;
+
+    { more info about ListenQueue
+      http://www.indyproject.org/docsite/html/frames.html?frmname=topic&frmfile=TIdCustomTCPServer_ListenQueue.html }
+    LServer.ListenQueue := 200;
+
+
+    LServer.Active := True;
+
+    LogI('CTRL+C to shutdown the server');
+    WaitForTerminationSignal;
+  finally
+    LServer.Free;
+  end;
+end;
+
+begin
+  ReportMemoryLeaksOnShutdown := True;
+  IsMultiThread := True;
+  UseConsoleLogger := True;
+  try
+    if WebRequestHandler <> nil then
+      WebRequestHandler.WebModuleClass := WebModuleClass;
+    WebRequestHandlerProc.MaxConnections := 1024;
+    RunServer(8080);
+  except
+    on E: Exception do
+      LogException(E, E.Message);
+  end;
+end.

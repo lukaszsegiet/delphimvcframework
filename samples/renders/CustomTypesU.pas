@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -48,8 +48,8 @@ type
   // custom serialized type as property Roles
   TSysUser = class
   private
-    FUserName: string;
-    FRoles: TUserRoles;
+    fUserName: string;
+    fRoles: TUserRoles;
     fRecordAlias: TNullableRecordAlias;
     procedure SetUserName(const Value: string);
     function GetUserRoles: TUserRoles;
@@ -61,16 +61,33 @@ type
     property RecordAlias: TNullableRecordAlias read fRecordAlias write fRecordAlias;
   end;
 
+  TSysUser2 = class
+  private
+    FUserName: string;
+    fRoles: TUserRoles;
+    fRecordAlias: TNullableRecordAlias;
+  public
+    constructor Create(aUserName: string; aRoles: TUserRoles);
+    property UserName: string read FUserName write FUserName;
+    // Here we are using the custom-serialized type TUserRoles
+    property Roles: TUserRoles read fRoles write fRoles;
+  end;
+
+
   TArrayTest = class
   private
     fStrings: TArray<string>;
     fIntegers: TArray<Integer>;
     fDoubles: TArray<Double>;
+    fEmptyIntegers: TArray<Integer>;
+    fNilArrayOfIntegers: TArray<Integer>;
   public
     constructor Create;
     property Integers: TArray<Integer> read fIntegers write fIntegers;
     property Strings: TArray<string> read fStrings write fStrings;
     property Doubles: TArray<Double> read fDoubles write fDoubles;
+    property EmptyIntegers: TArray<Integer> read fEmptyIntegers write fEmptyIntegers;
+    property NilArrayOfIntegers: TArray<Integer> read fNilArrayOfIntegers write fNilArrayOfIntegers;
   end;
 
   TSimpleListTest = class
@@ -117,6 +134,8 @@ var
   I: Integer;
 begin
   inherited;
+  fNilArrayOfIntegers := nil;
+  SetLength(fEmptyIntegers, 0);
   SetLength(fStrings, 5);
   for I := 0 to Length(fStrings) - 1 do
   begin
@@ -153,6 +172,15 @@ begin
   fStrings.Free;
   fDoubles.Free;
   inherited;
+end;
+
+{ TSysUser2 }
+
+constructor TSysUser2.Create(aUserName: string; aRoles: TUserRoles);
+begin
+  inherited Create;
+  FUserName := aUserName;
+  fRoles := aRoles;
 end;
 
 end.

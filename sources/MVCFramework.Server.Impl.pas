@@ -1,12 +1,12 @@
-// ***************************************************************************
+﻿// ***************************************************************************
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
-// Collaborators with this file: Ezequiel Juliano M�ller (ezequieljuliano@gmail.com)
+// Collaborators with this file: Ezequiel Juliano Müller (ezequieljuliano@gmail.com)
 //
 // ***************************************************************************
 //
@@ -34,11 +34,14 @@ uses
   System.SysUtils,
   System.Classes,
   System.Generics.Collections,
-  IdHTTPWebBrokerBridge,IdSSLOpenSSL,IdSSL,
-  MVCFramework.Server, MVCFramework, IdContext;
+  IdHTTPWebBrokerBridge,
+  IdSSLOpenSSL,
+  IdSSL,
+  IdContext,
+  MVCFramework.Server,
+  MVCFramework;
 
 type
-
   TMVCListenerProperties = class(TInterfacedObject, IMVCListenerProperties)
   private
     FName: string;
@@ -78,6 +81,9 @@ type
       AAuthData: String; var VUsername, VPassword: String;
       var VHandled: Boolean);
     procedure OnGetSSLPassword(var APassword: string);
+{$IF Defined(RIOORBETTER)}
+    procedure QuerySSLPort(APort: Word; var VUseSSL: boolean);
+{$ENDIF}
   protected
     function GetActive: Boolean;
 
@@ -261,6 +267,9 @@ begin
     FBridgeSSLHandler.SSLOptions.KeyFile := lSSLKeyFile;
     FBridgeSSLHandler.OnGetPassword := OnGetSSLPassword;
     FBridge.IOHandler := FBridgeSSLHandler;
+    {$IF Defined(RIOORBETTER)}
+    FBridge.OnQuerySSLPort := QuerySSLPort;
+    {$ENDIF}
   end;
 end;
 
@@ -280,6 +289,14 @@ procedure TMVCListener.OnParseAuthentication(AContext: TIdContext; const AAuthTy
 begin
   vhandled := True;
 end;
+
+
+{$IF Defined(RIOORBETTER)}
+procedure TMVCListener.QuerySSLPort(APort: Word; var VUseSSL: boolean);
+begin
+  VUseSSL := true;
+end;
+{$ENDIF}
 
 function TMVCListener.GetActive: Boolean;
 begin

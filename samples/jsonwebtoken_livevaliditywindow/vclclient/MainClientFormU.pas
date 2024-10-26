@@ -39,8 +39,8 @@ implementation
 
 
 uses
-  MVCFramework.RESTClient,
   MVCFramework.RESTClient.Intf,
+  MVCFramework.RESTClient,
   MVCFramework.Middleware.JWT,
   MVCFramework.Commons,
   MVCFramework.SystemJSONUtils,
@@ -54,17 +54,16 @@ var
   tokenOld, tokenNew: string; // NEW CODE
 begin
   tokenOld := FJWT; // NEW CODE
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0);
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
   if not FJWT.IsEmpty then
   begin
     lClient.SetBearerAuthorization(FJWT);
   end;
-  lResp := lClient
+  lClient
     .AddQueryStringParam('firstname', 'Daniele')
-    .AddQueryStringParam('lastname', 'Teti')
-    .Get('/admin/role1');
+    .AddQueryStringParam('lastname', 'Teti');
+  lResp := lClient.Get('/admin/role1');
 
   if not lResp.Success then
     ShowMessage(lResp.StatusCode.ToString + sLineBreak + lResp.Content);
@@ -87,13 +86,10 @@ var
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0)
-    .AddHeader(TMVCJWTDefaults.USERNAME_HEADER, 'user1')
-    .AddHeader(TMVCJWTDefaults.PASSWORD_HEADER, 'user1');
-  lRest := lClient.Get('/login');
-
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
+  lClient.AddHeader(TMVCJWTDefaults.USERNAME_HEADER, 'user1').AddHeader(TMVCJWTDefaults.PASSWORD_HEADER, 'user1');
+  lRest := lClient.Get('/login'); { any HTTP verbs is OK }
   lJSON := StrToJSONObject(lRest.Content);
   try
     JWT := lJSON.S['token'];
@@ -108,11 +104,9 @@ var
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0)
-    .SetBasicAuthorization('user1', 'user1');
-
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
+  lClient.SetBasicAuthorization('user1', 'user1');
   lRest := lClient.Post('/login');
   lJSON := StrToJSONObject(lRest.Content);
   try
@@ -128,10 +122,8 @@ var
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0);
-
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
   lRest := lClient.Post('/login', '{"jwtusername":"user1","jwtpassword":"user1"}');
   lJSON := StrToJSONObject(lRest.Content);
   try
@@ -145,7 +137,6 @@ procedure TMainForm.SetJWT(const Value: string);
 begin
   FJWT := Value;
   Memo1.Lines.Text := Value;
-
 end;
 
 end.

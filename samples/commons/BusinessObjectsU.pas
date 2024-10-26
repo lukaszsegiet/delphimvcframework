@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -34,9 +34,15 @@ uses
 {$IFNDEF LINUX}
   Vcl.Graphics,
 {$ENDIF}
-  JsonDataObjects, System.Classes;
+  JsonDataObjects, System.Classes, Data.DB;
 
 type
+
+  TEnumTest = (etValue1, etValue2, etValue3);
+  TSetOfEnumTest = set of TEnumTest;
+
+  TEnumColorTest = (ctRed, ctGreen, ctBlue);
+  TSetOfColors = set of TEnumColorTest;
 
   [MVCNameCase(ncLowerCase)]
   TPerson = class
@@ -53,6 +59,7 @@ type
     function GetFullName: string;
   public
     function Equals(Obj: TObject): boolean; override;
+    function ToString: String; override;
 
     property ID: Int64 read fID write fID;
     property FirstName: string read FFirstName write SetFirstName;
@@ -60,10 +67,14 @@ type
     property FullName: string read GetFullName;
     property DOB: TDate read FDOB write SetDOB;
     property Married: boolean read FMarried write SetMarried;
-    constructor Create; virtual;
+    constructor Create; overload; virtual;
+    constructor Create(FirstName, LastName: String; Age: Integer); overload;
+    destructor Destroy; override;
     class function GetNew(AFirstName, ALastName: string; ADOB: TDate; AMarried: boolean): TPerson;
     class function GetList(const aCount: Integer = 3): TObjectList<TPerson>;
   end;
+
+  TPeople = TObjectList<TPerson>;
 
   TClassWithArrays = class
   private
@@ -76,6 +87,25 @@ type
     property ArrayOfInt: TArray<Integer> read fArrayOfInt write fArrayOfInt;
     property ArrayOfInt64: TArray<Int64> read fArrayOfInt64 write fArrayOfInt64;
     property ArrayOfDouble: TArray<Double> read fArrayOfDouble write fArrayOfDouble;
+  end;
+
+
+  TClassWithEnums = class
+  private
+    fRGBSet: TSetOfColors;
+    fEnumWithName: TEnumColorTest;
+    fEnumDefaultSerialization: TEnumColorTest;
+    fEnumWithOrdValue: TEnumColorTest;
+    fEnumWithMappedValues: TEnumColorTest;
+  public
+    property RGBSet: TSetOfColors read fRGBSet write fRGBSet;
+    property EnumDefaultSerialization: TEnumColorTest read fEnumDefaultSerialization write fEnumDefaultSerialization;
+    [MVCEnumSerialization(estEnumName)]
+    property EnumWithName: TEnumColorTest read fEnumWithNAme write fEnumWithName;
+    [MVCEnumSerialization(estEnumOrd)]
+    property EnumWithOrdValue: TEnumColorTest read fEnumWithOrdValue write fEnumWithOrdValue;
+    [MVCEnumSerialization(estEnumMappedValues, 'Red,Green,Blue')]
+    property EnumWithMappedValues: TEnumColorTest read fEnumWithMappedValues write fEnumWithMappedValues;
   end;
 
   [MVCNameCase(ncLowerCase)]
@@ -174,7 +204,7 @@ type
   TInterfacedPerson = class(TInterfacedObject, IPerson)
   private
     fName: string;
-    FDOB: TDate;
+    fDOB: TDate;
     fAge: Integer;
   protected
     function GetName: string;
@@ -184,12 +214,13 @@ type
     function GetDOB: TDate;
     procedure SetDOB(const Value: TDate);
   public
-    property name: string read GetName write SetName;
+    property Name: string read GetName write SetName;
     property Age: Integer read GetAge write SetAge;
     property DOB: TDate read GetDOB write SetDOB;
+    constructor Create(Name: String; Age: Integer; DOB: TDate); virtual;
   end;
 
-  TPeople = class(TObjectList<TPerson>);
+  //TPeople = class(TObjectList<TPerson>);
 
   [MVCNameCase(ncLowerCase)]
   TMetadata = class
@@ -253,7 +284,20 @@ type
 {$IFNDEF LINUX}
     property Logo: TBitmap read fLogo write SetLogo;
 {$ENDIF}
-    class function GetList: TObjectList<TCustomer>;
+    class function GetList(Count: Integer = 1000): TObjectList<TCustomer>;
+  end;
+
+  [MVCNameCase(ncLowerCase)]
+  TEntityWithGUIDs = class
+  private
+    fNullableGUID: NullableTGUID;
+    fGUID: TGUID;
+    fNullableGUID2: NullableTGUID;
+  public
+    constructor Create(const RandomInitialization: boolean = True);
+    property GUID: TGUID read fGUID write fGUID;
+    property NullableGUID: NullableTGUID read fNullableGUID write fNullableGUID;
+    property NullableGUID2: NullableTGUID read fNullableGUID2 write fNullableGUID2;
   end;
 
   [MVCNameCase(ncLowerCase)]
@@ -266,6 +310,28 @@ type
   end;
 
   [MVCNameCase(ncLowerCase)]
+  TProgrammerEx = class(TProgrammer)
+  private
+    [MVCOwned] //required only for field serialization
+    FMentor: TProgrammerEx;
+  public
+    destructor Destroy; override;
+    [MVCOwned] //required only for property serialization
+    property Mentor: TProgrammerEx read FMentor write fMentor;
+  end;
+
+  [MVCNameCase(ncLowerCase)]
+  TProgrammerEx2 = class(TProgrammer)
+  private
+    FMentor: TProgrammer;
+  public
+    destructor Destroy; override;
+    [MVCOwned(TProgrammerEx2)]
+    property Mentor: TProgrammer read FMentor write fMentor;
+  end;
+
+
+  [MVCNameCase(ncLowerCase)]
   TPhilosopher = class(TPerson)
   private
     FMentors: string;
@@ -274,12 +340,82 @@ type
     property Mentors: string read FMentors write SetMentors;
   end;
 
+  [MVCNameCase(ncLowerCase)]
+  TMultiDataset = class
+  private
+    fPeople: TDataset;
+    fCustomers: TDataset;
+    procedure SetCustomers(const Value: TDataset);
+    procedure SetPeople(const Value: TDataset);
+  public
+    constructor Create;
+    property Customers: TDataset read fCustomers write SetCustomers;
+    property People: TDataset read fPeople write SetPeople;
+    destructor Destroy; override;
+  end;
+
+  // Records
+  TMyEnum = (EnumItem1, EnumItem2, EnumItem3);
+  TMySet = set of TMyEnum;
+
+  [MVCNameCase(ncCamelCase)]
+  TSimpleRecord = record
+    StringProperty: String;
+    IntegerProperty: Integer;
+    FloatProperty: Double;
+    CurrencyProperty: Currency;
+    BooleanProperty: Boolean;
+    DateProperty: TDate;
+    TimeProperty: TTime;
+    DateTimeProperty: TDateTime;
+    EnumProperty: TMyEnum;
+    SetProperty: TMySet;
+    class function Create: TSimpleRecord; overload; static;
+    class function Create(Value: Integer): TSimpleRecord; overload; static;
+    function ToString: String;
+    function Equals(SimpleRecord: TSimpleRecord): Boolean;
+  end;
+
+  TSimpleRecordDynArray = TArray<TSimpleRecord>;
+  TSimpleRecordStaticArray = array [0..2] of TSimpleRecord;
+
+  TComplexRecord = record
+    StringProperty: String;
+    IntegerProperty: Integer;
+    FloatProperty: Double;
+    CurrencyProperty: Currency;
+    DateProperty: TDate;
+    TimeProperty: TTime;
+    DateTimeProperty: TDateTime;
+    BooleanProperty: Boolean;
+    EnumProperty: TMyEnum;
+    SetProperty: TMySet;
+    SimpleRecord: TSimpleRecord;
+    SimpleRecordDynArray: TSimpleRecordDynArray;
+    SimpleRecordStaticArray: TSimpleRecordStaticArray;
+    class function Create: TComplexRecord; static;
+    function Equals(ComplexRecord: TComplexRecord): Boolean;
+  end;
+
+  TComplexRecordArray = TArray<TComplexRecord>;
+
+  TCustomerIssue648 = record
+    Id: NullableInt32;
+    Added: TDateTime;
+    Name: NullableString;
+    ExpirationDate: NullableTDate;
+    MaxUpdateDate: NullableTDate;
+    AppVersion: NullableString;
+    Activated: NullableTDateTime;
+  end;
+
+
 implementation
 
 uses
   System.SysUtils,
   System.Math,
-  RandomUtilsU;
+  RandomUtilsU, FireDAC.Comp.Client, System.TypInfo;
 
 { TPerson }
 
@@ -287,6 +423,21 @@ constructor TPerson.Create;
 begin
   inherited Create;
   fID := 1000 + Random(1000);
+end;
+
+constructor TPerson.Create(FirstName, LastName: String; Age: Integer);
+begin
+  Create;
+  FFirstName := FirstName;
+  FLastName := LastName;
+  FDOB := EncodeDate(CurrentYear - Age, 1, 1);
+  FMarried := False;
+end;
+
+destructor TPerson.Destroy;
+begin
+
+  inherited;
 end;
 
 function TPerson.Equals(Obj: TObject): boolean;
@@ -357,6 +508,18 @@ begin
   FMarried := Value;
 end;
 
+function TPerson.ToString: String;
+begin
+  Result :=
+    Format('ID: %d, LAST_NAME: %s, FIRST_NAME: %s, MARRIED: %s, DOB: %s',[
+      Self.ID,
+      Self.LastName,
+      Self.FirstName,
+      BoolToStr(Self.Married, True),
+      DateToISODate(Self.DOB)
+    ]);
+end;
+
 { TCustomer }
 
 constructor TCustomer.Create;
@@ -375,13 +538,13 @@ begin
   inherited;
 end;
 
-class function TCustomer.GetList: TObjectList<TCustomer>;
+class function TCustomer.GetList(Count: Integer): TObjectList<TCustomer>;
 var
   C1: TCustomer;
   I: Integer;
 begin
   Result := TObjectList<TCustomer>.Create(true);
-  for I := 1 to 1000 do
+  for I := 1 to Count do
   begin
     C1 := TCustomer.Create;
     C1.name := I.ToString + ': bit Time Professionals';
@@ -499,6 +662,14 @@ end;
 
 { TInterfacedPerson }
 
+constructor TInterfacedPerson.Create(Name: String; Age: Integer; DOB: TDate);
+begin
+  inherited Create;
+  fName := Name;
+  fAge := Age;
+  fDOB := DOB;
+end;
+
 function TInterfacedPerson.GetAge: Integer;
 begin
   Result := fAge;
@@ -556,17 +727,18 @@ var
 begin
   lOtherObj := Obj as TNullablesTest;
   Result := true;
-  Result := Result and Self.ff_int2.Equals(lOtherObj.ff_int2);
-  Result := Result and Self.ff_int4.Equals(lOtherObj.ff_int4);
-  Result := Result and Self.ff_int8.Equals(lOtherObj.ff_int8);
-  Result := Result and Self.ff_bool.Equals(lOtherObj.ff_bool);
-  Result := Result and (DateToISODate(Self.ff_date) = DateToISODate(lOtherObj.ff_date));
-  Result := Result and (TimeToISOTime(Self.ff_time) = TimeToISOTime(lOtherObj.ff_time));
-  Result := Result and (DateTimeToISOTimeStamp(Self.ff_datetime) = DateTimeToISOTimeStamp(lOtherObj.ff_datetime));
-  Result := Result and Self.ff_float4.Equals(lOtherObj.ff_float4);
-  Result := Result and Self.ff_float8.Equals(lOtherObj.ff_float8);
-  Result := Result and Self.ff_string.Equals(lOtherObj.ff_string);
-  Result := Result and Self.ff_currency.Equals(lOtherObj.ff_currency);
+  Result := Result and (Self.ff_int2 = lOtherObj.ff_int2);
+  Result := Result and (Self.ff_int4 = lOtherObj.ff_int4);
+  Result := Result and (Self.ff_int8 = lOtherObj.ff_int8);
+  Result := Result and (Self.ff_bool = lOtherObj.ff_bool);
+  Result := Result and Self.ff_date.Equals(lOtherObj.ff_date);
+  Result := Result and Self.ff_time.Equals(lOtherObj.ff_time);
+  Result := Result and Self.ff_datetime.Equals(lOtherObj.ff_datetime);
+  Result := Result and (Self.ff_float4 = lOtherObj.ff_float4);
+  Result := Result and (Self.ff_float8 = lOtherObj.ff_float8);
+  Result := Result and (Self.ff_string = lOtherObj.ff_string);
+  Result := Result and (Self.ff_currency = lOtherObj.ff_currency);
+
   { TODO -oDanieleT -cGeneral : Deserialize a stream over a nil pointer... should we create the TMemoryStream? }
   // Result := Result and ((Self.ff_blob as TStringStream).DataString = (lOtherObj.ff_blob as TStringStream).DataString);
 end;
@@ -591,6 +763,182 @@ destructor TNullablesTest.Destroy;
 begin
   ff_blob.Free;
   inherited;
+end;
+
+{ TMultiDataset }
+
+constructor TMultiDataset.Create;
+begin
+  inherited Create;
+  fCustomers := TFDMemTable.Create(nil);
+  fCustomers.FieldDefs.Clear;
+  fCustomers.FieldDefs.Add('Code', ftInteger);
+  fCustomers.FieldDefs.Add('Name', ftString, 20);
+  fCustomers.Active := true;
+
+  fPeople := TFDMemTable.Create(nil);
+  fPeople.FieldDefs.Clear;
+  fPeople.FieldDefs.Add('FirstName', ftString, 20);
+  fPeople.FieldDefs.Add('LastName', ftString, 20);
+  fPeople.Active := true;
+end;
+
+destructor TMultiDataset.Destroy;
+begin
+  fCustomers.Free;
+  fPeople.Free;
+  inherited;
+end;
+
+procedure TMultiDataset.SetCustomers(const Value: TDataset);
+begin
+  if fCustomers <> nil then
+  begin
+    raise Exception.Create('DataSet Already Initialized');
+  end;
+  fCustomers := Value;
+end;
+
+procedure TMultiDataset.SetPeople(const Value: TDataset);
+begin
+  if fPeople <> nil then
+  begin
+    raise Exception.Create('DataSet Already Initialized');
+  end;
+  fPeople := Value;
+end;
+
+{ TProgrammerEx }
+
+destructor TProgrammerEx.Destroy;
+begin
+  FMentor.Free;
+  inherited;
+end;
+
+{ TProgrammerEx2 }
+
+destructor TProgrammerEx2.Destroy;
+begin
+  FMentor.Free;
+  inherited;
+end;
+
+{ TEntityWithGUIDs }
+
+constructor TEntityWithGUIDs.Create(const RandomInitialization: boolean);
+begin
+  inherited Create;
+  if RandomInitialization then
+  begin
+    fGUID := TGUID.NewGuid;
+    fNullableGUID := TGUID.NewGuid;
+  end;
+end;
+
+{ TSimpleRecord }
+
+class function TSimpleRecord.Create: TSimpleRecord;
+begin
+  Result.StringProperty := 'the string property';
+  Result.IntegerProperty:= 1234;
+  Result.FloatProperty := 1234.56789;
+  Result.CurrencyProperty := 1234.5678;
+  Result.DateProperty:= EncodeDate(2022,7,5);
+  Result.TimeProperty := EncodeTime(12,13,14,0);
+  Result.DateTimeProperty := Result.DateProperty + Result.TimeProperty;
+  Result.BooleanProperty := True;
+  Result.EnumProperty := EnumItem2;
+  Result.SetProperty := [EnumItem1, EnumItem3];
+end;
+
+class function TSimpleRecord.Create(Value: Integer): TSimpleRecord;
+begin
+  Result := TSimpleRecord.Create;
+  Result.StringProperty := Value.ToString;
+  Result.IntegerProperty := Value;
+  Result.CurrencyProperty := Value + Value div 1000;
+end;
+
+function TSimpleRecord.Equals(SimpleRecord: TSimpleRecord): Boolean;
+begin
+  Result := True;
+  Result := Result and (StringProperty = SimpleRecord.StringProperty);
+  Result := Result and (IntegerProperty = SimpleRecord.IntegerProperty);
+  Result := Result and (FloatProperty = SimpleRecord.FloatProperty);
+  Result := Result and (CurrencyProperty = SimpleRecord.CurrencyProperty);
+  Result := Result and (DateProperty = SimpleRecord.DateProperty);
+  Result := Result and (TimeProperty = SimpleRecord.TimeProperty);
+  Result := Result and (CompareValue(DateTimeProperty, SimpleRecord.DateTimeProperty, 0.0001) = 0);
+  Result := Result and (BooleanProperty = SimpleRecord.BooleanProperty);
+  Result := Result and (EnumProperty = SimpleRecord.EnumProperty);
+  Result := Result and (SetProperty * SimpleRecord.SetProperty = [EnumItem1, EnumItem3]);
+  Result := Result and (SetProperty - SimpleRecord.SetProperty = []);
+end;
+
+function TSimpleRecord.ToString: String;
+  function SetToString: String;
+  var
+    lEl: TMyEnum;
+  begin
+    for lEl in SetProperty do
+    begin
+      Result := Result + GetEnumName(typeinfo(TMyEnum), Ord(Self.EnumProperty)) + ',';
+    end;
+    Result := Result.Trim([',']);
+  end;
+begin
+  Result :=
+    'StringProperty   = ' + Self.StringProperty + sLineBreak +
+    'IntegerProperty  = ' + Self.IntegerProperty.ToString + sLineBreak +
+    'FloatProperty    = ' + Self.FloatProperty.ToString + sLineBreak +
+    'CurrencyProperty = ' + CurrToStr(Self.CurrencyProperty) + sLineBreak +
+    'DateProperty     = ' + DateToStr(Self.DateProperty) + sLineBreak +
+    'TimeProperty     = ' + TimeToStr(Self.TimeProperty) + sLineBreak +
+    'DateTimeProperty = ' + FormatDateTime('yyyy-mm-dd hh:nn:ss', Self.DateTimeProperty) + sLineBreak +
+    'BooleanProperty  = ' + BoolToStr(Self.BooleanProperty, True) + sLineBreak +
+    'EnumProperty     = ' + GetEnumName(typeinfo(TMyEnum), Ord(Self.EnumProperty)) + sLineBreak +
+    'SetProperty      = ' + SetToString + sLineBreak;
+end;
+
+{ TComplexRecord }
+
+class function TComplexRecord.Create: TComplexRecord;
+begin
+  Result.StringProperty := 'the string property';
+  Result.IntegerProperty:= 1234;
+  Result.FloatProperty := 1234.56789;
+  Result.CurrencyProperty := 1234.5678;
+  Result.DateProperty:= EncodeDate(2022,7,5);
+  Result.TimeProperty := EncodeTime(12,13,14,0);
+  Result.DateTimeProperty := Result.DateProperty + Result.TimeProperty;
+  Result.BooleanProperty := True;
+  Result.EnumProperty := EnumItem2;
+  Result.SetProperty := [EnumItem1, EnumItem3];
+  Result.SimpleRecord := TSimpleRecord.Create;
+  SetLength(Result.SimpleRecordDynArray,2);
+  Result.SimpleRecordDynArray[0] := TSimpleRecord.Create(1);
+  Result.SimpleRecordDynArray[1] := TSimpleRecord.Create(2);
+  Result.SimpleRecordStaticArray[0] := TSimpleRecord.Create(3);
+  Result.SimpleRecordStaticArray[1] := TSimpleRecord.Create(4);
+  Result.SimpleRecordStaticArray[2] := TSimpleRecord.Create(5);
+end;
+
+function TComplexRecord.Equals(ComplexRecord: TComplexRecord): Boolean;
+begin
+  Result := True;
+  Result := Result and (StringProperty = ComplexRecord.StringProperty);
+  Result := Result and (IntegerProperty = ComplexRecord.IntegerProperty);
+  Result := Result and (FloatProperty = ComplexRecord.FloatProperty);
+  Result := Result and (CurrencyProperty = ComplexRecord.CurrencyProperty);
+  Result := Result and (DateProperty = ComplexRecord.DateProperty);
+  Result := Result and (TimeProperty = ComplexRecord.TimeProperty);
+  Result := Result and (CompareValue(DateTimeProperty, ComplexRecord.DateTimeProperty, 0.0001)  = 0);
+  Result := Result and (BooleanProperty = ComplexRecord.BooleanProperty);
+  Result := Result and (EnumProperty = ComplexRecord.EnumProperty);
+  Result := Result and (SetProperty * ComplexRecord.SetProperty = [EnumItem1, EnumItem3]);
+  Result := Result and (SetProperty - ComplexRecord.SetProperty = []);
+
 end;
 
 initialization

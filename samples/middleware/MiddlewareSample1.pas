@@ -8,40 +8,40 @@ uses
 type
   TMVCSalutationMiddleware = class(TInterfacedObject, IMVCMiddleware)
   protected
-    procedure OnAfterControllerAction(Context: TWebContext; const AActionNAme: string;
-      const Handled: Boolean);
     procedure OnBeforeRouting(Context: TWebContext; var Handled: Boolean);
     procedure OnBeforeControllerAction(Context: TWebContext;
       const AControllerQualifiedClassName: string; const AActionNAme: string; var Handled: Boolean);
-    procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+    procedure OnAfterRouting(Context: TWebContext; const AHandled: Boolean);
+    procedure OnAfterControllerAction(Context: TWebContext; const AControllerQualifiedClassName: string; const AActionName: string; const AHandled: Boolean);
   end;
 
   TMVCRedirectAndroidDeviceOnPlayStore = class(TInterfacedObject, IMVCMiddleware)
   protected
     procedure OnBeforeRouting(Context: TWebContext; var Handled: Boolean);
-    procedure OnAfterControllerAction(Context: TWebContext; const AActionNAme: string;
-      const Handled: Boolean);
     procedure OnBeforeControllerAction(Context: TWebContext;
       const AControllerQualifiedClassName: string; const AActionNAme: string; var Handled: Boolean);
     procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+    procedure OnAfterControllerAction(AContext: TWebContext; const AControllerQualifiedClassName: string; const AActionName: string; const AHandled: Boolean);
   end;
 
 implementation
 
 uses
-  System.SysUtils;
+  System.SysUtils, MVCFramework.Commons;
 
 { TMVCSalutationMiddleware }
 
-procedure TMVCSalutationMiddleware.OnAfterControllerAction(Context: TWebContext;
-  const AActionNAme: string; const Handled: Boolean);
+procedure TMVCSalutationMiddleware.OnAfterControllerAction(
+  Context: TWebContext; const AControllerQualifiedClassName: string;
+  const AActionName: string; const AHandled: Boolean);
 begin
   Context.Response.CustomHeaders.Values['X-PROUD-HEADER'] :=
     'Proudly served by DelphiMVCFramework (https://github.com/danieleteti/delphimvcframework)';
 end;
 
-procedure TMVCRedirectAndroidDeviceOnPlayStore.OnAfterControllerAction(Context: TWebContext;
-  const AActionNAme: string; const Handled: Boolean);
+procedure TMVCRedirectAndroidDeviceOnPlayStore.OnAfterControllerAction(
+  AContext: TWebContext; const AControllerQualifiedClassName: string;
+  const AActionName: string; const AHandled: Boolean);
 begin
   // do nothing
 end;
@@ -64,13 +64,13 @@ begin
   Log(Context.Request.Headers['User-Agent']);
   if Context.Request.Headers['User-Agent'].Contains('Android') then
   begin
-    Context.Response.Location := 'http://play.google.com';
-    Context.Response.StatusCode := 307; // temporary redirect
+    Context.Response.Location := 'https://play.google.com';
+    Context.Response.StatusCode := HTTP_STATUS.TemporaryRedirect; // 307 - temporary redirect
     Handled := True;
   end;
 end;
 
-procedure TMVCSalutationMiddleware.OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+procedure TMVCSalutationMiddleware.OnAfterRouting(Context: TWebContext; const AHandled: Boolean);
 begin
   // do nothing
 end;

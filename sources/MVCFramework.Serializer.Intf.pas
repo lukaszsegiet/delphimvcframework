@@ -2,11 +2,11 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
-// Collaborators on this file: Ezequiel Juliano Müller (ezequieljuliano@gmail.com)
+// Collaborators on this file: Ezequiel Juliano Mï¿½ller (ezequieljuliano@gmail.com)
 //
 // ***************************************************************************
 //
@@ -86,6 +86,21 @@ type
       const ASerializationAction: TMVCSerializationAction = nil
       ): string; overload;
 
+    function SerializeRecord(
+      const ARecord: Pointer;
+      const ARecordTypeInfo: PTypeInfo;
+      const AType: TMVCSerializationType = stDefault;
+      const AIgnoredAttributes: TMVCIgnoredList = nil;
+      const ASerializationAction: TMVCSerializationAction = nil
+      ): string; overload;
+
+    function SerializeArrayOfRecord(
+      var ATValueContainingAnArray: TValue;
+      const AType: TMVCSerializationType = stDefault;
+      const AIgnoredAttributes: TMVCIgnoredList = nil;
+      const ASerializationAction: TMVCSerializationAction = nil
+      ): string; overload;
+
     function SerializeCollection(
       const AList: TObject;
       const AType: TMVCSerializationType = stDefault;
@@ -134,7 +149,8 @@ type
       const AList: TObject;
       const AClazz: TClass;
       const AType: TMVCSerializationType = stDefault;
-      const AIgnoredAttributes: TMVCIgnoredList = nil
+      const AIgnoredAttributes: TMVCIgnoredList = nil;
+      const ARootNode: String = ''
       ); overload;
 
     procedure DeserializeCollection(

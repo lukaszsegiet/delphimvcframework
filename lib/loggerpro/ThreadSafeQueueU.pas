@@ -2,7 +2,7 @@
 //
 // LoggerPro
 //
-// Copyright (c) 2010-2018 Daniele Teti
+// Copyright (c) 2010-2024 Daniele Teti
 //
 // https://github.com/danieleteti/loggerpro
 //
@@ -36,8 +36,7 @@ type
   private
     fPopTimeout: UInt64;
     fQueue: TObjectQueue<T>;
-    fCriticalSection: TCriticalSection;
-    // fSpinLock: TSpinLock;
+    fCriticalSection: TCriticalSection;    
     fEvent: TEvent;
     fMaxSize: UInt64;
     fShutDown: Boolean;
@@ -77,7 +76,6 @@ begin
   fMaxSize := MaxSize;
   fQueue := TObjectQueue<T>.Create(False);
   fCriticalSection := TCriticalSection.Create;
-  // fSpinLock := TMonitor.Create(False);
   fEvent := TEvent.Create(nil, True, False, '');
   fPopTimeout := PopTimeout;
 end;
@@ -151,7 +149,7 @@ end;
 
 function TThreadSafeQueue<T>.Enqueue(const Item: T): Boolean;
 const
-  cRetryCount: Byte = 5;
+  cRetryCount: Byte = 20;
 var
   lCount: Integer;
 begin
@@ -162,13 +160,12 @@ begin
   lCount := 0;
   while lCount < cRetryCount do
   begin
-    Sleep(lCount * 10);
+    Sleep(lCount * lCount * lCount * 10);  //let's slow down the enqueue call using a cubic function
     fCriticalSection.Enter;
     try
       if fQueue.Count >= fMaxSize then
       begin
         Inc(lCount);
-        // Sleep(lCount * 10);
         Continue;
       end;
       fQueue.Enqueue(Item);
@@ -229,7 +226,5 @@ procedure TMREWObjectList<T>.EndWrite;
 begin
   fMREWSync.EndWrite;
 end;
-
-
 
 end.

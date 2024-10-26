@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -35,7 +35,9 @@ uses
   MVCFramework,
   MVCFramework.Commons,
   MVCFramework.JWT,
-  JsonDataObjects;
+  JsonDataObjects,
+  MVCFramework.HMAC,
+  Web.HTTPApp;
 
 type
   TMVCJWTDefaults = class sealed
@@ -52,6 +54,14 @@ type
     /// Default password header name
     /// </summary>
     PASSWORD_HEADER = 'jwtpassword';
+    /// <summary>
+    /// Default AUTH schema
+    /// </summary>
+    AUTH_SCHEMA = 'Bearer';
+    /// <summary>
+    /// Default url authorization token
+    /// </summary>
+    AUTHORIZATION_ACCESS_TOKEN = 'access_token';
   end;
 
   TJWTClaimsSetup = reference to procedure(const JWT: TJWT);
@@ -65,38 +75,86 @@ type
     FLeewaySeconds: Cardinal;
     FLoginURLSegment: string;
     FAuthorizationHeaderName: string;
+    FAuthorizationAccessToken: string;
     FUserNameHeaderName: string;
     FPasswordHeaderName: string;
+    FHMACAlgorithm: String;
+    FUseHttpOnly: Boolean;
+    FTokenHttpOnlyExpires: TDateTime;
+    FLogoffURLSegment: string;
+    procedure SendLogoffRender(AContext: TWebContext);
   protected
     function NeedsToBeExtended(const JWTValue: TJWT): Boolean;
     procedure ExtendExpirationTime(const JWTValue: TJWT);
     procedure InternalRender(AJSONOb: TJDOJsonObject; AContentType: string; AContentEncoding: string;
-      AContext: TWebContext; AInstanceOwner: Boolean = True);
-    procedure OnBeforeRouting(AContext: TWebContext; var AHandled: Boolean);
+      AContext: TWebContext; AInstanceOwner: Boolean = True); virtual;
+    procedure OnBeforeRouting(AContext: TWebContext; var AHandled: Boolean); virtual;
     procedure OnBeforeControllerAction(AContext: TWebContext; const AControllerQualifiedClassName: string;
-      const AActionName: string; var AHandled: Boolean);
-    procedure OnAfterControllerAction(AContext: TWebContext; const AActionName: string; const AHandled: Boolean);
-    procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+      const AActionName: string; var AHandled: Boolean); virtual;
+    procedure OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean); virtual;
+    procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean); virtual;
   public
-    /// <remarks>
-    /// WARNING! The AAuthorizationHeaderName, AUserNameHeaderName, and APasswordHeaderName parameters do not follow
-    /// the IETF national convention - RFC 6750;
-    /// Please use the other constructor!
-    /// </remarks>
-    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler; AConfigClaims: TJWTClaimsSetup;
-      ASecret: string = 'D3lph1MVCFram3w0rk'; ALoginURLSegment: string = '/login';
-      AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300;
-      AAuthorizationHeaderName: string = TMVCJWTDefaults.AUTHORIZATION_HEADER;
-      AUserNameHeaderName: string = TMVCJWTDefaults.USERNAME_HEADER;
-      APasswordHeaderName: string = TMVCJWTDefaults.PASSWORD_HEADER); overload; virtual;
-      deprecated 'Issue #244: IETF (RFC-6750) - This constructor will be removed soon, please use the new one';
-    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler; ASecret: string = 'D3lph1MVCFram3w0rk';
-      ALoginURLSegment: string = '/login'; AConfigClaims: TJWTClaimsSetup = nil;
-      AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300); overload; virtual;
+    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler;
+      AConfigClaims: TJWTClaimsSetup;
+      ASecret: string = 'D3lph1MVCFram3w0rk';
+      ALoginURLSegment: string = '/login';
+      AClaimsToCheck: TJWTCheckableClaims = [];
+      ALeewaySeconds: Cardinal = 300;
+      AHMACAlgorithm: String = HMAC_HS512); overload; virtual;
+    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler;
+      AConfigClaims: TJWTClaimsSetup;
+      AUseHttpOnly: Boolean;
+      ALogoffURLSegment: string = '/logoff';
+      ASecret: string = 'D3lph1MVCFram3w0rk';
+      ALoginURLSegment: string = '/login';
+      AClaimsToCheck: TJWTCheckableClaims = [];
+      ALeewaySeconds: Cardinal = 300;
+      AHMACAlgorithm: String = HMAC_HS512); overload; virtual;
     property AuthorizationHeaderName: string read FAuthorizationHeaderName;
     property UserNameHeaderName: string read FUserNameHeaderName;
     property PasswordHeaderName: string read FPasswordHeaderName;
   end;
+
+  TMVCOnAcceptTokenProc = reference to procedure(AContext: TWebContext; AJWTToken: String;
+    var AAccepted: Boolean);
+  TMVCOnNewJWTToBlackList = reference to procedure(AContext: TWebContext; AJWTToken: String);
+
+  TMVCJWTBlackListMiddleware = class(TInterfacedObject, IMVCMiddleware)
+  private
+    fOnAcceptToken: TMVCOnAcceptTokenProc;
+    fOnNewJWTToBlackList: TMVCOnNewJWTToBlackList;
+    fBlackListRequestURLSegment: string;
+  protected
+    procedure OnBeforeRouting(
+      AContext: TWebContext;
+      var AHandled: Boolean
+      );
+
+    procedure OnBeforeControllerAction(
+      AContext: TWebContext;
+      const AControllerQualifiedClassName: string;
+      const AActionName: string;
+      var AHandled: Boolean
+      );
+
+    procedure OnAfterControllerAction(
+      AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
+
+    procedure OnAfterRouting(
+      AContext: TWebContext;
+      const AHandled: Boolean
+      );
+  public
+    constructor Create(
+      OnAcceptToken: TMVCOnAcceptTokenProc;
+      OnNewJWTToBlackList: TMVCOnNewJWTToBlackList;
+      BlackListRequestURLSegment: string = '/logout');
+  end;
+
 
 implementation
 
@@ -108,28 +166,14 @@ uses
 
 { TMVCJWTAuthenticationMiddleware }
 
-constructor TMVCJWTAuthenticationMiddleware.Create(AAuthenticationHandler: IMVCAuthenticationHandler;
-  AConfigClaims: TJWTClaimsSetup; ASecret: string = 'D3lph1MVCFram3w0rk'; ALoginURLSegment: string = '/login';
-  AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300;
-  AAuthorizationHeaderName: string = TMVCJWTDefaults.AUTHORIZATION_HEADER;
-  AUserNameHeaderName: string = TMVCJWTDefaults.USERNAME_HEADER;
-  APasswordHeaderName: string = TMVCJWTDefaults.PASSWORD_HEADER);
-begin
-  inherited Create;
-  FAuthenticationHandler := AAuthenticationHandler;
-  FSetupJWTClaims := AConfigClaims;
-  FClaimsToChecks := AClaimsToCheck;
-  FSecret := ASecret;
-  FLoginURLSegment := ALoginURLSegment;
-  FLeewaySeconds := ALeewaySeconds;
-  FAuthorizationHeaderName := AAuthorizationHeaderName;
-  FUserNameHeaderName := AUserNameHeaderName;
-  FPasswordHeaderName := APasswordHeaderName;
-end;
-
-constructor TMVCJWTAuthenticationMiddleware.Create(AAuthenticationHandler: IMVCAuthenticationHandler;
-  ASecret, ALoginURLSegment: string; AConfigClaims: TJWTClaimsSetup; AClaimsToCheck: TJWTCheckableClaims;
-  ALeewaySeconds: Cardinal);
+constructor TMVCJWTAuthenticationMiddleware.Create(
+  AAuthenticationHandler: IMVCAuthenticationHandler;
+  AConfigClaims: TJWTClaimsSetup;
+  ASecret, ALoginURLSegment: string;
+  AClaimsToCheck: TJWTCheckableClaims;
+  ALeewaySeconds: Cardinal;
+  AHMACAlgorithm: String
+  );
 begin
   inherited Create;
   FAuthenticationHandler := AAuthenticationHandler;
@@ -139,14 +183,30 @@ begin
   FLoginURLSegment := ALoginURLSegment;
   FLeewaySeconds := ALeewaySeconds;
   FAuthorizationHeaderName := TMVCJWTDefaults.AUTHORIZATION_HEADER;
+  FAuthorizationAccessToken := TMVCJWTDefaults.AUTHORIZATION_ACCESS_TOKEN;
   FUserNameHeaderName := TMVCJWTDefaults.USERNAME_HEADER;
   FPasswordHeaderName := TMVCJWTDefaults.PASSWORD_HEADER;
+  FHMACAlgorithm := AHMACAlgorithm;
+  FUseHttpOnly := False;
+  FTokenHttpOnlyExpires := Now;
+end;
+
+constructor TMVCJWTAuthenticationMiddleware.Create(AAuthenticationHandler: IMVCAuthenticationHandler; AConfigClaims: TJWTClaimsSetup; AUseHttpOnly: Boolean; ALogoffURLSegment: string;
+  ASecret, ALoginURLSegment: string; AClaimsToCheck: TJWTCheckableClaims; ALeewaySeconds: Cardinal; AHMACAlgorithm: String);
+begin
+  Create(AAuthenticationHandler, AConfigClaims, ASecret, ALoginURLSegment, AClaimsToCheck, ALeewaySeconds, AHMACAlgorithm);
+  FUseHttpOnly := AUseHttpOnly;
+  FLogoffURLSegment := ALogoffURLSegment;
 end;
 
 procedure TMVCJWTAuthenticationMiddleware.ExtendExpirationTime(const JWTValue: TJWT);
 begin
   JWTValue.Claims.ExpirationTime := Max(JWTValue.Claims.ExpirationTime, Now) +
     (JWTValue.LeewaySeconds + JWTValue.LiveValidityWindowInSeconds) * OneSecond;
+  if FUseHttpOnly then
+  begin
+    FTokenHttpOnlyExpires := JWTValue.Claims.ExpirationTime;
+  end;
 end;
 
 procedure TMVCJWTAuthenticationMiddleware.InternalRender(AJSONOb: TJDOJsonObject;
@@ -154,8 +214,21 @@ procedure TMVCJWTAuthenticationMiddleware.InternalRender(AJSONOb: TJDOJsonObject
 var
   Encoding: TEncoding;
   ContentType, JValue: string;
+  Cookie: TCookie;
 begin
   JValue := AJSONOb.ToJSON;
+
+  if FUseHttpOnly then
+  begin
+    Cookie := AContext.Response.Cookies.Add;
+    Cookie.Expires := FTokenHttpOnlyExpires;
+    Cookie.Path := '/';
+    Cookie.Name := 'token';
+    Cookie.Value := AJSONOb.S['token'];
+    Cookie.HttpOnly := True;
+    // Cookie.Secure := True;
+    // Cookie.SameSite := 'none';
+  end;
 
   AContext.Response.RawWebResponse.ContentType := AContentType + '; charset=' + AContentEncoding;
   ContentType := AContentType + '; charset=' + AContentEncoding;
@@ -172,6 +245,27 @@ begin
     FreeAndNil(AJSONOb)
 end;
 
+procedure TMVCJWTAuthenticationMiddleware.SendLogoffRender(AContext: TWebContext);
+const
+  returnMessage = '{ "message": "Successful logout" }';
+  ContentType = 'application/json; charset=UTF-8';
+  AContentEncoding = 'UTF-8';
+var
+  Encoding: TEncoding;
+  Cookie: TCookie;
+begin
+  Cookie := AContext.Response.Cookies.Add;
+  Cookie.Name := 'token';
+  Cookie.Path := '/';
+
+  Encoding := TEncoding.GetEncoding(AContentEncoding);
+  try
+    AContext.Response.SetContentStream(TBytesStream.Create(TEncoding.Convert(TEncoding.Default, Encoding, TEncoding.Default.GetBytes(returnMessage))), ContentType);
+  finally
+    Encoding.Free;
+  end;
+end;
+
 function TMVCJWTAuthenticationMiddleware.NeedsToBeExtended(const JWTValue: TJWT): Boolean;
 var
   lWillExpireIn: Int64;
@@ -180,8 +274,9 @@ begin
   Result := lWillExpireIn <= JWTValue.LiveValidityWindowInSeconds;
 end;
 
-procedure TMVCJWTAuthenticationMiddleware.OnAfterControllerAction(AContext: TWebContext; const AActionName: string;
-  const AHandled: Boolean);
+procedure TMVCJWTAuthenticationMiddleware.OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 begin
   // Implement as needed
 end;
@@ -198,10 +293,10 @@ var
   IsAuthorized: Boolean;
   JWTValue: TJWT;
   AuthHeader: string;
+  AuthAccessToken: string;
   AuthToken: string;
   ErrorMsg: string;
-const
-  AUTH_SCHEMA = 'Bearer';
+  CookieToken: string;
 begin
   // check if the resource is protected
   if Assigned(FAuthenticationHandler) then
@@ -216,7 +311,12 @@ begin
         If there isn't a token, we don't have to raise exceptions, just make sure that the LoggedUser doesn't contain
         information.
       }
+      // retrieve the token from the "authentication Bearer" header
       AuthHeader := AContext.Request.Headers[FAuthorizationHeaderName];
+      if AuthHeader.IsEmpty then
+        // retrieve the token from the "access_token" query param
+        AuthHeader := AContext.Request.Params[FAuthorizationAccessToken];
+
       if not AuthHeader.IsEmpty then
       begin
         { load and verify token even for an action that doesn't require it }
@@ -226,9 +326,9 @@ begin
 
           // retrieve the token from the "authentication Bearer" header
           AuthToken := '';
-          if AuthHeader.Substring(0, AUTH_SCHEMA.Length).ToLower = 'bearer' then
+          if AuthHeader.Substring(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).ToLower = 'bearer' then
           begin
-            AuthToken := AuthHeader.Remove(0, AUTH_SCHEMA.Length).Trim;
+            AuthToken := AuthHeader.Remove(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).Trim;
             AuthToken := Trim(TNetEncoding.URL.Decode(AuthToken));
           end;
 
@@ -253,18 +353,42 @@ begin
   JWTValue := TJWT.Create(FSecret, FLeewaySeconds);
   try
     JWTValue.RegClaimsToChecks := Self.FClaimsToChecks;
-    AuthHeader := AContext.Request.Headers[FAuthorizationHeaderName];
-    if AuthHeader.IsEmpty then
-      raise EMVCJWTException.Create(HTTP_STATUS.Unauthorized, 'Authorization Required');
-
     // retrieve the token from the "authentication Bearer" header
-    AuthToken := '';
-    if AuthHeader.Substring(0, AUTH_SCHEMA.Length).ToLower = 'bearer' then
+    AuthHeader := AContext.Request.Headers[FAuthorizationHeaderName];
+    if (not AuthHeader.IsEmpty) then
     begin
-      AuthToken := AuthHeader.Remove(0, AUTH_SCHEMA.Length).Trim;
-      AuthToken := Trim(TNetEncoding.URL.Decode(AuthToken));
+      AuthToken := '';
+      if AuthHeader.Substring(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).ToLower = 'bearer' then
+      begin
+        AuthToken := AuthHeader.Remove(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).Trim;
+        AuthToken := Trim(TNetEncoding.URL.Decode(AuthToken));
+      end;
+    end
+    else
+    begin
+      // retrieve the token from the "access_token" query param
+      AuthAccessToken := AContext.Request.Params[FAuthorizationAccessToken];
+      if (not AuthAccessToken.IsEmpty) then
+      begin
+        AuthToken := AuthAccessToken.Trim;
+        AuthToken := Trim(TNetEncoding.URL.Decode(AuthToken));
+      end
+      else
+      begin
+        if FUseHttpOnly then
+        begin
+          CookieToken := AContext.Request.Cookie('token');
+          if (not CookieToken.IsEmpty) then
+          begin
+            AuthToken := CookieToken.Trim;
+            AuthToken := Trim(TNetEncoding.URL.Decode(AuthToken));
+          end;
+        end;
+      end;
     end;
 
+    if AuthToken.IsEmpty then
+      raise EMVCJWTException.Create(HTTP_STATUS.Unauthorized, 'Authorization Required');
     if not JWTValue.LoadToken(AuthToken, ErrorMsg) then
       raise EMVCJWTException.Create(HTTP_STATUS.Unauthorized, ErrorMsg);
 
@@ -323,7 +447,7 @@ begin
       LPassword := TNetEncoding.URL.Decode(AContext.Request.Headers[FPasswordHeaderName]);
 
       // read from content
-      if LUsername.IsEmpty then
+      if LUsername.IsEmpty and not SameText(AContext.Request.ContentMediaType, TMVCMediaType.APPLICATION_JSON) then
       begin
         LUsername := AContext.Request.ContentParam(FUserNameHeaderName);
         LPassword := AContext.Request.ContentParam(FPasswordHeaderName);
@@ -332,11 +456,7 @@ begin
       // read from json content
       if LUsername.IsEmpty then
       begin
-        lJObj := nil;
-        try
-          lJObj := TJsonBaseObject.Parse(AContext.Request.Body) as TJsonObject;
-        except
-        end;
+        lJObj := StrToJSONObject(AContext.Request.Body, False);
         try
           if Assigned(lJObj) then
           begin
@@ -375,7 +495,7 @@ begin
         begin
           FAuthenticationHandler.OnAuthentication(AContext, LUsername, LPassword, LRolesList, LIsValid, LSessionData);
           if not LIsValid then
-            raise EMVCJWTException.Create(HTTP_STATUS.Forbidden, 'Forbidden');
+            raise EMVCJWTException.Create(HTTP_STATUS.Unauthorized, 'Unauthorized');
         end;
 
         LJWTValue := TJWT.Create(FSecret, FLeewaySeconds);
@@ -383,8 +503,13 @@ begin
           // let's user config claims and custom claims
           if not Assigned(FSetupJWTClaims) then
             raise EMVCJWTException.Create('SetupJWTClaims not set');
-
+          LJWTValue.Data := AContext.Request;
           FSetupJWTClaims(LJWTValue);
+
+          if FUseHttpOnly then
+          begin
+            FTokenHttpOnlyExpires := LJWTValue.Claims.ExpirationTime;
+          end;
 
           // these claims are mandatory and managed by the middleware
           if not LJWTValue.CustomClaims['username'].IsEmpty then
@@ -437,7 +562,101 @@ begin
     finally
       LRolesList.Free;
     end;
+  end
+  else
+  begin
+    if SameText(AContext.Request.PathInfo, FLogoffURLSegment) and (FUseHttpOnly) then
+    begin
+      SendLogoffRender(AContext);
+      AHandled := True;
+    end;
   end;
 end;
+
+
+constructor TMVCJWTBlackListMiddleware.Create(
+  OnAcceptToken: TMVCOnAcceptTokenProc;
+  OnNewJWTToBlackList: TMVCOnNewJWTToBlackList;
+  BlackListRequestURLSegment: string = '/logout');
+begin
+  inherited Create;
+  fOnAcceptToken := OnAcceptToken;
+  fOnNewJWTToBlackList := OnNewJWTToBlackList;
+  fBlackListRequestURLSegment := BlackListRequestURLSegment;
+  Assert(Assigned(fOnAcceptToken));
+  Assert(not fBlackListRequestURLSegment.IsEmpty);
+end;
+
+procedure TMVCJWTBlackListMiddleware.OnAfterControllerAction(
+      AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
+begin
+  // Implement as needed
+end;
+
+procedure TMVCJWTBlackListMiddleware.OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
+begin
+  // Implement as needed
+end;
+
+procedure TMVCJWTBlackListMiddleware.OnBeforeControllerAction(
+  AContext: TWebContext; const AControllerQualifiedClassName,
+  AActionName: string; var AHandled: Boolean);
+begin
+  // Implement as needed
+end;
+
+procedure TMVCJWTBlackListMiddleware.OnBeforeRouting(AContext: TWebContext; var AHandled: Boolean);
+var
+  lAuthHeader: string;
+  lAuthToken: string;
+  lAccepted: Boolean;
+begin
+  lAuthToken := '';
+  lAuthHeader := AContext.Request.Headers[TMVCJWTDefaults.AUTHORIZATION_HEADER];
+  if not lAuthHeader.IsEmpty then
+  begin
+    // retrieve the token from the "authentication Bearer" header
+    if lAuthHeader.Substring(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).ToLower = 'bearer' then
+    begin
+      lAuthToken := lAuthHeader.Remove(0, TMVCJWTDefaults.AUTH_SCHEMA.Length).Trim;
+      lAuthToken := Trim(TNetEncoding.URL.Decode(lAuthToken));
+    end;
+  end;
+
+  if SameText(AContext.Request.PathInfo, fBlackListRequestURLSegment) then
+  begin
+    // add the token in the blacklist
+    if lAuthToken.IsEmpty then
+    begin
+      raise EMVCException.Create(HTTP_STATUS.BadRequest,
+        'JWTToken required - cannot blacklist an unknown token');
+    end;
+    fOnNewJWTToBlackList(AContext, lAuthToken);
+    AContext.Response.StatusCode := HTTP_STATUS.NoContent;
+    AHandled := True;
+  end
+  else
+  begin
+    // just check if token is blacklisted.
+    // if the token is not available, just ignore the check
+    // remember, here jwtmiddleware already did its job.
+    if lAuthToken.IsEmpty then
+    begin
+      AHandled := False;
+    end
+    else
+    begin
+      lAccepted := True;
+      fOnAcceptToken(AContext, lAuthToken, lAccepted);
+      if not lAccepted then
+      begin
+        raise EMVCJWTException.Create(HTTP_STATUS.Forbidden, 'JWT not accepted');
+      end;
+    end;
+  end;
+end;
+
 
 end.

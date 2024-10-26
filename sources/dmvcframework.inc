@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2019 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -71,6 +71,14 @@ DelphiMVCFramework is compatible with Delphi version XE7 or better
 {$DEFINE SYDNEYORBETTER}
 {$ENDIF}
 
+{$IF CompilerVersion >= 35} // 11 Alexandria
+{$DEFINE ALEXANDRIAORBETTER}
+{$ENDIF}
+
+{$IF CompilerVersion >= 36} // 12 Athens
+{$DEFINE ATHENSORBETTER}
+{$ENDIF}
+
 {$IFDEF MOBILE}
 {$LEGACYIFEND OFF}
 {$ENDIF}
@@ -86,7 +94,19 @@ DelphiMVCFramework is compatible with Delphi version XE7 or better
 
 {$DEFINE SYSTEMJSON}
 {$IFNDEF MOBILE}
+{$IFNDEF MACOS}
 {$DEFINE WEBAPACHEHTTP}
+{$ENDIF}
 {$ENDIF}
 {$DEFINE USEFIREDAC}
 
+{$IF Defined(SYDNEYORBETTER)}
+{$DEFINE CUSTOM_MANAGED_RECORDS}
+{$ENDIF}
+
+{$UNDEF WEBSTENCILS}
+{$IF Defined(ATHENSORBETTER)}
+{$IF declared(RTLVersion122) or (RTLVersion >= 37)}
+{$DEFINE WEBSTENCILS}
+{$ENDIF}
+{$ENDIF}

@@ -12,17 +12,31 @@ from pathlib import Path
 
 init()
 
-DEFAULT_DELPHI_VERSION = "10.4"
-
 g_releases_path = "releases"
 g_output = "bin"
 g_output_folder = ""  # defined at runtime
 g_version = "DEV"
 
 
-def get_delphi_projects_to_build(which="", delphi_version=DEFAULT_DELPHI_VERSION):
+
+delphi_versions = [
+    {"version": "10.0", "path": "17.0", "desc": "Delphi 10 Seattle"},
+    {"version": "10.1", "path": "18.0", "desc": "Delphi 10.1 Berlin"},
+    {"version": "10.2", "path": "19.0", "desc": "Delphi 10.2 Tokyo"},
+    {"version": "10.3", "path": "20.0", "desc": "Delphi 10.3 Rio"},
+    {"version": "10.4", "path": "21.0", "desc": "Delphi 10.4 Sydney"},
+    {"version": "11.0", "path": "22.0", "desc": "Delphi 11 Alexandria"},
+    {"version": "11.1", "path": "22.0", "desc": "Delphi 11.1 Alexandria"},
+    {"version": "11.2", "path": "22.0", "desc": "Delphi 11.2 Alexandria"},
+    {"version": "11.3", "path": "22.0", "desc": "Delphi 11.3 Alexandria"},
+    {"version": "12.0", "path": "23.0", "desc": "Delphi 12 Athens"},
+]
+
+
+def get_delphi_projects_to_build(which=""):
     projects = []
-    dversion = "d" + delphi_version.replace(".", "")
+    delphi_version, _ = get_best_delphi_version_available()
+    dversion = "d" + delphi_version["version"].replace(".", "")
     if not which or which == "core":
         projects += glob.glob(
             r"packages\{dversion}\*.groupproj".format(dversion=dversion)
@@ -37,46 +51,48 @@ def get_delphi_projects_to_build(which="", delphi_version=DEFAULT_DELPHI_VERSION
     return sorted(projects)
 
 
+def get_best_delphi_version_available() -> (dict, str):
+    global delphi_version
+    found = False
+    rsvars_path = None
+    i = len(delphi_versions)
+    while (not found) and (i >= 0):
+        i-=1
+        delphi_version = delphi_versions[i]
+        version_path = delphi_version["path"]
+        rsvars_path = f"C:\\Program Files (x86)\\Embarcadero\\Studio\\{version_path}\\bin\\rsvars.bat"
+        if os.path.isfile(rsvars_path):
+            found = True
+        else:
+            rsvars_path = f"D:\\Program Files (x86)\\Embarcadero\\Studio\\{version_path}\\bin\\rsvars.bat"
+            if os.path.isfile(rsvars_path):
+                found = True
+    if found:
+        return delphi_version, rsvars_path
+    else:
+        raise Exception("Cannot find a Delphi compiler")
+
+
 def build_delphi_project(
-    ctx: context.Context,
-    project_filename,
-    config="DEBUG",
-    delphi_version=DEFAULT_DELPHI_VERSION,
+    ctx: context.Context, project_filename, config="DEBUG", platform="Win32"
 ):
-    delphi_versions = {
-        "XE7": {"path": "15.0", "desc": "Delphi XE7"},
-        "XE8": {"path": "16.0", "desc": "Delphi XE8"},
-        "10": {"path": "17.0", "desc": "Delphi 10 Seattle"},
-        "10.1": {"path": "18.0", "desc": "Delphi 10.1 Berlin"},
-        "10.2": {"path": "19.0", "desc": "Delphi 10.2 Tokyo"},
-        "10.3": {"path": "20.0", "desc": "Delphi 10.3 Rio"},
-        "10.4": {"path": "21.0", "desc": "Delphi 10.4 Sydney"},		
-    }
-
-    assert delphi_version in delphi_versions, (
-        "Invalid Delphi version: " + delphi_version
-    )
-    print("[" + delphi_versions[delphi_version]["desc"] + "] ", end="")
-    version_path = delphi_versions[delphi_version]["path"]
-
-    rsvars_path = (
-        f"C:\\Program Files (x86)\\Embarcadero\\Studio\\{version_path}\\bin\\rsvars.bat"
-    )
-    if not os.path.isfile(rsvars_path):
-        rsvars_path = f"D:\\Program Files (x86)\\Embarcadero\\Studio\\{version_path}\\bin\\rsvars.bat"
-        if not os.path.isfile(rsvars_path):
-            raise Exception("Cannot find rsvars.bat")
+    delphi_version, rsvars_path = get_best_delphi_version_available()
+    print('\nBUILD WITH: ' + delphi_version["desc"])
     cmdline = (
         '"'
         + rsvars_path
         + '"'
         + " & msbuild /t:Build /p:Config="
         + config
-        + ' /p:Platform=Win32 "'
+        + f' /p:Platform={platform} "'
         + project_filename
         + '"'
     )
-    return ctx.run(cmdline, hide=True, warn=True)
+    r = ctx.run(cmdline, hide=True, warn=True)
+    if r.failed:
+        print(r.stdout)
+        print(r.stderr)
+        raise Exit("Build failed for " + delphi_version["desc"])
 
 
 def zip_samples(version):
@@ -117,7 +133,6 @@ def copy_sources():
     # copying tools
     print("Copying tools...")
     copytree("tools\\entitygenerator", g_output_folder + "\\tools\\entitygenerator")
-    # copytree('tools\\rql2sql', g_output_folder + "\\tools\\rql2sql")
 
     # copying ideexperts
     print("Copying DMVCFramework IDEExpert...")
@@ -141,7 +156,7 @@ def copy_sources():
         "dmvcframeworkDT.dpk",
     ]
 
-    folders = ["d100", "d101", "d102", "d103", "d104"]
+    folders = ["d100", "d101", "d102", "d103", "d104", "d110", "d113", "d120"]
 
     for folder in folders:
         print(f"Copying DMVCFramework Delphi {folder} packages...")
@@ -150,6 +165,15 @@ def copy_sources():
             copy2(
                 rf"packages\{folder}\{file}", g_output_folder + rf"\packages\{folder}"
             )
+    # copy2(
+    #     rf"packages\common_contains.inc", g_output_folder + rf"\packages"
+    # )
+    # copy2(
+    #     rf"packages\common_defines.inc", g_output_folder + rf"\packages"
+    # )
+    # copy2(
+    #     rf"packages\common_defines_design.inc", g_output_folder + rf"\packages"
+    # )
 
 
 def copy_libs(ctx):
@@ -201,14 +225,11 @@ def init_build(version):
     f.write("BUILD DATETIME " + datetime.now().isoformat() + "\n")
     f.close()
     copy2("README.md", g_output_folder)
-    copy2("3_0_0_breaking_changes.md", g_output_folder)
-    copy2("3_1_0_breaking_changes.md", g_output_folder)
-    copy2("3_2_0_breaking_changes.md", g_output_folder)
     copy2("License.txt", g_output_folder)
 
 
 def build_delphi_project_list(
-    ctx, projects, config="DEBUG", filter="", delphi_version=DEFAULT_DELPHI_VERSION
+    ctx, projects, config="DEBUG", filter=""
 ):
     ret = True
     for delphi_project in projects:
@@ -217,14 +238,21 @@ def build_delphi_project_list(
             continue
         msg = f"Building: {os.path.basename(delphi_project)}  ({config})"
         print(Fore.RESET + msg.ljust(90, "."), end="")
-        res = build_delphi_project(ctx, delphi_project, "DEBUG", delphi_version)
-        if res.ok:
+        try:
+            build_delphi_project(ctx, delphi_project, "DEBUG")
             print(Fore.GREEN + "OK" + Fore.RESET)
-        else:
-            ret = False
+        except Exception as e:
             print(Fore.RED + "\n\nBUILD ERROR")
-            print(Fore.RESET + res.stdout)
-            print("\n")
+            print(Fore.RESET)
+            print(e)
+
+        # if res.ok:
+        #     print(Fore.GREEN + "OK" + Fore.RESET)
+        # else:
+        #     ret = False
+        #     print(Fore.RED + "\n\nBUILD ERROR")
+        #     print(Fore.RESET + res.stdout)
+        #     print("\n")
 
     return ret
 
@@ -268,13 +296,20 @@ def clean(ctx, folder=None):
     rmtree(folder + r"\lib\loggerpro\packages\d103\Win32\Debug", True)
     rmtree(folder + r"\lib\loggerpro\packages\d104\__history", True)
     rmtree(folder + r"\lib\loggerpro\packages\d104\Win32\Debug", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d110\__history", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d110\Win32\Debug", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d111\__history", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d111\Win32\Debug", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d112\__history", True)
+    rmtree(folder + r"\lib\loggerpro\packages\d112\Win32\Debug", True)
     rmtree(folder + r"\lib\dmustache\.git", True)
     rmtree(folder + r"\lib\swagdoc\lib", True)
     rmtree(folder + r"\lib\swagdoc\deploy", True)
     rmtree(folder + r"\lib\swagdoc\demos", True)
 
+
 @task()
-def tests(ctx, delphi_version=DEFAULT_DELPHI_VERSION):
+def tests32(ctx):
     """Builds and execute the unit tests"""
     import os
 
@@ -284,9 +319,13 @@ def tests(ctx, delphi_version=DEFAULT_DELPHI_VERSION):
     testserver = r"unittests\general\TestServer\TestServer.dproj"
 
     print("\nBuilding Unit Test client")
-    build_delphi_project(ctx, testclient, config="CI", delphi_version=delphi_version)
+    build_delphi_project(
+        ctx, testclient, config="CI", platform="Win32"
+    )
     print("\nBuilding Test Server")
-    build_delphi_project(ctx, testserver, config="CI", delphi_version=delphi_version)
+    build_delphi_project(
+        ctx, testserver, config="CI", platform="Win32"
+    )
 
     # import subprocess
     # subprocess.run([r"unittests\general\TestServer\Win32\Debug\TestServer.exe"])
@@ -294,25 +333,101 @@ def tests(ctx, delphi_version=DEFAULT_DELPHI_VERSION):
     import subprocess
 
     print("\nExecuting tests...")
-    subprocess.Popen([r"unittests\general\TestServer\bin\TestServer.exe"])
-    r = subprocess.run([r"unittests\general\Several\bin\DMVCFrameworkTests.exe"])
-    subprocess.run(["taskkill", "/f", "/im", "TestServer.exe"])
+    subprocess.Popen([r"unittests\general\TestServer\bin\TestServer.exe"], shell=True)
+    r = None
+    try:
+        r = subprocess.run([r"unittests\general\Several\bin32\DMVCFrameworkTests.exe"])
+        if r.returncode != 0:
+            return Exit("Cannot run unit test client: \n" + str(r.stdout))
+    finally:
+        subprocess.run(["taskkill", "/f", "/im", "TestServer.exe"])
     if r.returncode > 0:
         print(r)
         print("Unit Tests Failed")
         return Exit("Unit tests failed")
 
 
-@task(pre=[tests])
+@task()
+def tests64(ctx):
+    """Builds and execute the unit tests"""
+    import os
+
+    apppath = os.path.dirname(os.path.realpath(__file__))
+    res = True
+    testclient = r"unittests\general\Several\DMVCFrameworkTests.dproj"
+    testserver = r"unittests\general\TestServer\TestServer.dproj"
+
+    print("\nBuilding Unit Test client")
+    build_delphi_project(
+        ctx, testclient, config="CI", platform="Win64"
+    )
+    print("\nBuilding Test Server")
+    build_delphi_project(
+        ctx, testserver, config="CI", platform="Win64"
+    )
+
+    # import subprocess
+    # subprocess.run([r"unittests\general\TestServer\Win32\Debug\TestServer.exe"])
+    # os.spawnl(os.P_NOWAIT, r"unittests\general\TestServer\Win32\Debug\TestServer.exe")
+    import subprocess
+
+    print("\nExecuting tests...")
+    subprocess.Popen([r"unittests\general\TestServer\bin\TestServer.exe"], shell=True)
+    r = None
+    try:
+        r = subprocess.run([r"unittests\general\Several\bin64\DMVCFrameworkTests.exe"])
+        if r.returncode != 0:
+            return Exit("Cannot run unit test client: \n" + str(r.stdout))
+    finally:
+        subprocess.run(["taskkill", "/f", "/im", "TestServer.exe"])
+    if r.returncode > 0:
+        print(r)
+        print("Unit Tests Failed")
+        return Exit("Unit tests failed")
+
+
+@task(pre=[tests32, tests64])
+def tests(ctx):
+    pass
+
+def get_version_from_file():
+    with open(r".\sources\dmvcframeworkbuildconsts.inc") as f:
+        lines = f.readlines()   
+    res = [x for x in lines if "DMVCFRAMEWORK_VERSION" in x]
+    if len(res) != 1:
+        raise Exception("Cannot find DMVCFRAMEWORK_VERSION in dmvcframeworkbuildconsts.inc file")
+    version_line: str = res[0]
+    version_line = version_line.strip(" ;\t")
+    pieces = version_line.split("=")
+    if len(pieces) != 2:
+        raise Exception("Version line in wrong format in dmvcframeworkbuildconsts.inc file: " + version_line)
+    version = pieces[1].strip("' ")
+    if not 'framework' in version:
+        version = "dmvcframework-" + version
+    if "beta" in version.lower():
+        print(Fore.RESET + Fore.RED + "WARNING - BETA VERSION: " + version + Fore.RESET)
+    else:
+        print(Fore.RESET + Fore.GREEN + "BUILDING VERSION: " + version + Fore.RESET)
+    return version
+
+@task()
 def release(
-    ctx, version="DEBUG", delphi_version=DEFAULT_DELPHI_VERSION, skip_build=False
+    ctx,
+    skip_build=False,
+    skip_tests=False,
 ):
     """Builds all the projects, executes integration tests and prepare the release"""
+
+    version = get_version_from_file()
+
     init_build(version)
+
+    if not skip_tests:
+        tests(ctx)
     if not skip_build:
-        delphi_projects = get_delphi_projects_to_build("", delphi_version)
+        delphi_projects = get_delphi_projects_to_build("")
         if not build_delphi_project_list(
-            ctx, delphi_projects, version, "", delphi_version
+            ctx, delphi_projects, version, ""
         ):
             return False  # fails build
     print(Fore.RESET)
@@ -325,22 +440,22 @@ def release(
 
 @task
 def build_samples(
-    ctx, version="DEBUG", filter="", delphi_version=DEFAULT_DELPHI_VERSION
+    ctx, version="DEBUG", filter=""
 ):
     """Builds samples"""
     init_build(version)
-    delphi_projects = get_delphi_projects_to_build("samples", delphi_version)
+    delphi_projects = get_delphi_projects_to_build("samples")
     return build_delphi_project_list(
-        ctx, delphi_projects, version, filter, delphi_version
+        ctx, delphi_projects, version, filter
     )
 
 
-@task(post=[tests])
-def build_core(ctx, version="DEBUG", delphi_version=DEFAULT_DELPHI_VERSION):
+@task(post=[])
+def build_core(ctx, version="DEBUG"):
     """Builds core packages extensions"""
     init_build(version)
-    delphi_projects = get_delphi_projects_to_build("core", delphi_version)
-    ret = build_delphi_project_list(ctx, delphi_projects, version, "", delphi_version)
+    delphi_projects = get_delphi_projects_to_build("core")
+    ret = build_delphi_project_list(ctx, delphi_projects, version, "")
     if not ret:
         raise Exit("Build failed")
 
@@ -389,21 +504,70 @@ def generate_nullables(ctx):
     main_tmpl, intf_tmpl, impl_tmpl = parse_template(rows)
 
     delphi_types = [
-        "String",
-        "Currency",
-        "Boolean",
-        "TDate",
-        "TTime",
-        "TDateTime",
-        "Single",
-        "Double",
-        "Extended",
-        "Int16",
-        "UInt16",
-        "Int32",
-        "UInt32",
-        "Int64",
-        "UInt64",
+        [
+            "String",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "Currency",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "Boolean",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "TDate",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (DateAreEquals(LeftValue.Value, RightValue.Value)))",
+        ],
+        [
+            "TTime",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (TimeAreEquals(LeftValue.Value, RightValue.Value)))",
+        ],
+        [
+            "TDateTime",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t (DateAreEquals(LeftValue.Value, RightValue.Value) and \n\t TimeAreEquals(LeftValue.Value, RightValue.Value)))",
+        ],
+        [
+            "Single",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t SameValue(LeftValue.Value, RightValue.Value, 0.000001))",
+        ],
+        [
+            "Double",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t SameValue(LeftValue.Value, RightValue.Value, 0.000000001))",
+        ],
+        [
+            "Extended",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and \n\t SameValue(LeftValue.Value, RightValue.Value, 0.000000001))",
+        ],
+        [
+            "Int16",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "UInt16",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "Int32",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "UInt32",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "Int64",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "UInt64",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
+        [
+            "TGUID",
+            "(LeftValue.IsNull and RightValue.IsNull) or ((LeftValue.HasValue and RightValue.HasValue) and (LeftValue.Value = RightValue.Value))",
+        ],
     ]
 
     str_main_tmpl = "".join(main_tmpl)
@@ -412,15 +576,47 @@ def generate_nullables(ctx):
 
     intf_out = ""
     impl_out = ""
-    for delphi_type in delphi_types:
+
+    enum_declaration = ["ntInvalidNullableType"]
+    enum_detect_line = []
+    for delphi_type, type_compare in delphi_types:
+        enum_declaration.append("ntNullable" + delphi_type)
+        enum_detect_line.append(
+            f"  if aTypeInfo = TypeInfo(Nullable{delphi_type}) then \n    Exit(ntNullable{delphi_type}); "
+        )
+
         intf_out += (
             f"//**************************\n// ** Nullable{delphi_type}\n//**************************\n\n"
             + str_intf_tmpl.replace("$TYPE$", delphi_type)
         )
-        impl_out += str_impl_tmpl.replace("$TYPE$", delphi_type) + "\n"
+        impl_out += (
+            str_impl_tmpl.replace("$TYPE$", delphi_type).replace(
+                "$COMPARE$", type_compare
+            )
+            + "\n"
+        )
 
-    str_main_tmpl = str_main_tmpl.replace("$INTERFACE$", intf_out).replace(
-        "$IMPLEMENTATION$", impl_out
+    enum_declaration = (
+        "  TNullableType = (\n     " + "\n   , ".join(enum_declaration) + ");\n\n"
+    )
+    enum_detect_function = []
+    enum_detect_function.append(
+        "function GetNullableType(const aTypeInfo: PTypeInfo): TNullableType;"
+    )
+    enum_detect_function.append("begin")
+    enum_detect_function.extend(enum_detect_line)
+    enum_detect_function.append("  Result := ntInvalidNullableType;")
+    enum_detect_function.append("end;")
+
+    intf_out += enum_declaration + "\n"
+    intf_out += enum_detect_function[0] + "\n"
+    impl_out += "\n".join(enum_detect_function) + "\n"
+
+    str_main_tmpl = (
+        str_main_tmpl.replace("$INTERFACE$", intf_out).replace(
+            "$IMPLEMENTATION$", impl_out
+        )
+        + "\n"
     )
 
     with open(output_unitname, "w") as f:

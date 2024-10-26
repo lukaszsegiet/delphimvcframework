@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -32,7 +32,7 @@ uses
   System.Generics.Collections,
   JsonDataObjects,
   MVCFramework,
-  MVCFramework.Patches;
+  MVCFramework.Patches, MVCFramework.HMAC;
 
 type
 
@@ -252,6 +252,7 @@ type
     FHMACAlgorithm: string;
     FRegClaimsToChecks: TJWTCheckableClaims;
     FLeewaySeconds: Cardinal;
+    FData: TObject; //the jwt middleware will inject TMVCWebRequest here
     procedure SetHMACAlgorithm(const Value: string);
     procedure SetChecks(const Value: TJWTCheckableClaims);
     function CheckExpirationTime(Payload: TJDOJSONObject; out Error: string): Boolean;
@@ -261,10 +262,14 @@ type
     function GetLiveValidityWindowInSeconds: Cardinal;
     function IsValidToken(const Token: string; out Header, Payload: TJDOJSONObject; out Error: string): Boolean;
   public
-    constructor Create(const SecretKey: string; const ALeewaySeconds: Cardinal = 300); virtual;
+    constructor Create(
+      const SecretKey: string;
+      const ALeewaySeconds: Cardinal = 300;
+      const HMACAlgorithm: String = HMAC_HS512); virtual;
     destructor Destroy; override;
     function GetToken: string;
     function LoadToken(const Token: string; out Error: string): Boolean;
+    property Data: TObject read fData write fData;
     property Claims: TJWTRegisteredClaims read FRegisteredClaims;
     property CustomClaims: TJWTCustomClaims read FCustomClaims;
     property HMACAlgorithm: string read FHMACAlgorithm write SetHMACAlgorithm;
@@ -284,7 +289,6 @@ implementation
 uses
   System.SysUtils,
   MVCFramework.Commons,
-  MVCFramework.HMAC,
   System.DateUtils,
   IdGlobal;
 
@@ -506,13 +510,13 @@ begin
   Result := True;
 end;
 
-constructor TJWT.Create(const SecretKey: string; const ALeewaySeconds: Cardinal = 300);
+constructor TJWT.Create(const SecretKey: string; const ALeewaySeconds: Cardinal; const HMACAlgorithm: String);
 begin
   inherited Create;
   FSecretKey := SecretKey;
   FRegisteredClaims := TJWTRegisteredClaims.Create;
   FCustomClaims := TJWTCustomClaims.Create;
-  FHMACAlgorithm := HMAC_HS512;
+  FHMACAlgorithm := HMACAlgorithm;
   FLeewaySeconds := ALeewaySeconds;
   FRegClaimsToChecks := [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt];
 end;
@@ -581,11 +585,11 @@ var
   lAlgName: string;
 begin
   Result := False;
-  Error := '';
+  Error := 'Invalid Token';
   lPieces := Token.Split(['.']);
   if Length(lPieces) <> 3 then
   begin
-    Error := 'Invalid Token';
+    Error := Error + ' (step1)';
     Exit(False);
   end;
 
@@ -593,7 +597,7 @@ begin
   try
     if not Assigned(Header) then
     begin
-      Error := 'Invalid Token';
+      Error := Error + ' (step2)';
       Exit(False);
     end;
 
@@ -601,13 +605,13 @@ begin
     try
       if not Assigned(Payload) then
       begin
-        Error := 'Invalid Token';
+        Error := Error + ' (step3)';
         Exit(False);
       end;
 
       if not Header.Contains('alg') then
       begin
-        Error := 'Invalid Token';
+        Error := Error + ' (step4)';
         Exit(False);
       end;
 
@@ -625,6 +629,7 @@ begin
           if not CheckExpirationTime(Payload, Error) then
           begin
             Exit(False);
+            Error := Error + ' (step6)';
           end;
 
         end;
@@ -634,6 +639,7 @@ begin
           if not CheckNotBefore(Payload, Error) then
           begin
             Exit(False);
+            Error := Error + ' (step7)';
           end;
         end;
 
@@ -642,10 +648,16 @@ begin
           if not CheckIssuedAt(Payload, Error) then
           begin
             Exit(False);
+            Error := Error + ' (step8)';
           end;
         end;
-      end;
 
+        Error := '';
+      end
+      else
+      begin
+        Error := Error + ' (step5)';
+      end;
     finally
       if not Result then
         FreeAndNil(Payload);

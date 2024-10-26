@@ -44,7 +44,14 @@ begin
   lClaimsSetup := procedure(const JWT: TJWT)
     begin
       JWT.Claims.Issuer := 'Delphi MVC Framework JWT Middleware Sample';
-      JWT.Claims.ExpirationTime := Now + OneHour; // valid for 1 hour
+      if TMVCWebRequest(JWT.Data).QueryStringParamExists('rememberme') then
+      begin
+        JWT.Claims.ExpirationTime := Now + (OneHour * 10); // valid for 10 hour
+      end
+      else
+      begin
+        JWT.Claims.ExpirationTime := Now + OneHour; // valid for 1 hour
+      end;
       JWT.Claims.NotBefore := Now - OneMinute * 5; // valid since 5 minutes ago
       JWT.Claims.IssuedAt := Now;
       JWT.CustomClaims['mycustomvalue'] := 'hello there';
@@ -59,11 +66,19 @@ begin
   MVC
     .AddController(TApp1MainController)
     .AddController(TAdminController)
-    .AddMiddleware(TMVCJWTAuthenticationMiddleware.Create(TAuthenticationSample.Create, 'mys3cr37', '/login',
-    lClaimsSetup,
-    [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt], 300))
+    .AddMiddleware(
+      TMVCJWTAuthenticationMiddleware.Create(
+        TAuthenticationSample.Create,
+        lClaimsSetup,
+        'mys3cr37',
+        '/login',
+        [
+          TJWTCheckableClaim.ExpirationTime,
+          TJWTCheckableClaim.NotBefore,
+          TJWTCheckableClaim.IssuedAt
+        ], 300))
     .AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
+    '/static', { StaticFilesPath }
     '..\..\www' { DocumentRoot }
     ));
 end;

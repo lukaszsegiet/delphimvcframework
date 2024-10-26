@@ -2,10 +2,13 @@ unit WebModuleU;
 
 interface
 
-uses System.SysUtils, System.Classes, Web.HTTPApp, MVCFramework;
+uses System.SysUtils, System.Classes, Web.HTTPApp, MVCFramework, FireDAC.Stan.Intf, FireDAC.Stan.Option,
+  FireDAC.Stan.Param, FireDAC.Stan.Error, FireDAC.DatS, FireDAC.Phys.Intf, FireDAC.DApt.Intf, Data.DB,
+  FireDAC.Comp.DataSet, FireDAC.Comp.Client;
 
 type
   TWebModule1 = class(TWebModule)
+    FDMemTable1: TFDMemTable;
     procedure WebModuleCreate(Sender: TObject);
     procedure WebModuleDestroy(Sender: TObject);
   private
@@ -23,12 +26,16 @@ implementation
 uses
   MVCFramework.View.Renderers.Mustache,
   WebSiteControllerU,
+  System.IOUtils,
   MVCFramework.Commons,
-  MVCFramework.Middleware.StaticFiles;
+  MVCFramework.Middleware.StaticFiles,
+  CustomMustacheHelpersU,
+  MVCFramework.Serializer.URLEncoded;
 
 { %CLASSGROUP 'Vcl.Controls.TControl' }
 
 {$R *.dfm}
+
 
 procedure TWebModule1.WebModuleCreate(Sender: TObject);
 begin
@@ -51,15 +58,11 @@ begin
       Config[TMVCConfigKey.ViewPath] := 'templates';
       // Enable Server Signature in response
       Config[TMVCConfigKey.ExposeServerSignature] := 'true';
+      Config[TMVCConfigKey.ViewCache] := 'false';
     end)
     .AddController(TWebSiteController)
     .SetViewEngine(TMVCMustacheViewEngine)
-    .AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
-    ExtractFilePath(GetModuleName(HInstance)) + '\www', { DocumentRoot }
-    'index.html' {IndexDocument - Before it was named fallbackresource}
-    ));
-
+    .AddSerializer(TMVCMediaType.APPLICATION_FORM_URLENCODED, TMVCURLEncodedSerializer.Create);
 end;
 
 procedure TWebModule1.WebModuleDestroy(Sender: TObject);

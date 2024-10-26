@@ -1,12 +1,8 @@
 object dmMain: TdmMain
-  OldCreateOrder = False
   Height = 214
   Width = 438
   object Connection: TFDConnection
     Params.Strings = (
-      
-        'Database=C:\DEV\dmvcframework\samples\data\ORDERSMANAGER_FB30.FD' +
-        'B'
       'User_Name=sysdba'
       'Password=masterkey'
       'Protocol=TCPIP'

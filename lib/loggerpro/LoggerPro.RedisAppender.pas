@@ -1,6 +1,28 @@
+// *************************************************************************** }
+//
+// LoggerPro
+//
+// Copyright (c) 2010-2024 Daniele Teti
+//
+// https://github.com/danieleteti/loggerpro
+//
+// ***************************************************************************
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// ***************************************************************************
+
 unit LoggerPro.RedisAppender;
-{ <@abstract(The unit to include if you want to use @link(TLoggerProRedisAppender))
-  @author(Daniele Teti) }
 
 interface
 
@@ -21,7 +43,7 @@ type
     FLogKeyPrefix: string;
     FMaxSize: Int64;
   public
-    constructor Create(aRedis: IRedisClient; aMaxSize: Int64 = 5000; aKeyPrefix: string = 'loggerpro'); reintroduce;
+    constructor Create(aRedis: IRedisClient; aMaxSize: Int64 = 5000; aKeyPrefix: string = 'loggerpro'; aLogItemRenderer: ILogItemRenderer = nil); reintroduce;
     procedure Setup; override;
     procedure TearDown; override;
     procedure WriteLog(const aLogItem: TLogItem); override;
@@ -33,12 +55,9 @@ implementation
 uses
   System.SysUtils;
 
-const
-  DEFAULT_LOG_FORMAT = '%0:s [TID %1:-8d][%2:-8s] %3:s [%4:s]';
-
-constructor TLoggerProRedisAppender.Create(aRedis: IRedisClient; aMaxSize: Int64; aKeyPrefix: string);
+constructor TLoggerProRedisAppender.Create(aRedis: IRedisClient; aMaxSize: Int64; aKeyPrefix: string; aLogItemRenderer: ILogItemRenderer);
 begin
-  inherited Create;
+  inherited Create(aLogItemRenderer);
   FRedis := aRedis;
   FLogKeyPrefix := aKeyPrefix;
   FMaxSize := aMaxSize;
@@ -46,6 +65,7 @@ end;
 
 procedure TLoggerProRedisAppender.Setup;
 begin
+  inherited;
   FRedis.Connect;
 end;
 
@@ -74,9 +94,7 @@ var
   lText: string;
   lKey: string;
 begin
-  lText := Format(DEFAULT_LOG_FORMAT, [datetimetostr(aLogItem.TimeStamp),
-    aLogItem.ThreadID, aLogItem.LogTypeAsString, aLogItem.LogMessage,
-    aLogItem.LogTag]);
+  lText := FormatLog(aLogItem);
   lKey := FLogKeyPrefix + '::logs'; // + aLogItem.LogTypeAsString.ToLower;
   // Push the log item to the right of the list (logs:info, logs:warning, log:error)
   FRedis.RPUSH(lKey, [lText]);

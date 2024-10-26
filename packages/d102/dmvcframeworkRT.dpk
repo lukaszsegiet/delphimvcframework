@@ -25,7 +25,6 @@ package dmvcframeworkRT;
 {$IMAGEBASE $400000}
 {$DEFINE DEBUG}
 {$ENDIF IMPLICITBUILDING}
-{$DESCRIPTION 'DMVCFramework 3.x'}
 {$LIBSUFFIX '102'}
 {$RUNONLY}
 {$IMPLICITBUILD ON}
@@ -33,8 +32,6 @@ package dmvcframeworkRT;
 requires
   rtl,
   inet,
-  dclcommon,
-  dcldb,
   FireDAC,
   IndyCore,
   IndyProtocols,
@@ -42,17 +39,20 @@ requires
   FireDACMySQLDriver,
   loggerproRT,
   FireDACPgDriver,
-  bindengine,
-  bindcomp,
-  RESTComponents;
+  FireDACSqliteDriver,
+  SwagDoc;
 
 contains
-  Web.ApacheConst,
-  Web.Win.IsapiHTTP,
-  Web.ApacheHTTP,
-  Web.HTTPDMethods,
   Web.HTTPDImpl,
-  JsonDataObjects in '..\..\sources\JsonDataObjects.pas',
+  Web.ApacheConst,
+  Web.ApacheHTTP,
+  Web.Win.IsapiHTTP,
+  Web.HTTPDMethods,
+  MVCFramework in '..\..\sources\MVCFramework.pas',
+  MVCFramework.AsyncTask in '..\..\sources\MVCFramework.AsyncTask.pas',
+  MVCFramework.Middleware.Swagger in '..\..\sources\MVCFramework.Middleware.Swagger.pas',
+  MVCFramework.Middleware.Trace in '..\..\sources\MVCFramework.Middleware.Trace.pas',
+  MVCFramework.Middleware.ETag in '..\..\sources\MVCFramework.Middleware.ETag.pas',
   MVCFramework.ActiveRecord in '..\..\sources\MVCFramework.ActiveRecord.pas',
   MVCFramework.ActiveRecordController in '..\..\sources\MVCFramework.ActiveRecordController.pas',
   MVCFramework.ApplicationSession in '..\..\sources\MVCFramework.ApplicationSession.pas',
@@ -75,15 +75,14 @@ contains
   MVCFramework.Middleware.JWT in '..\..\sources\MVCFramework.Middleware.JWT.pas',
   MVCFramework.Middleware.SecurityHeaders in '..\..\sources\MVCFramework.Middleware.SecurityHeaders.pas',
   MVCFramework.MultiMap in '..\..\sources\MVCFramework.MultiMap.pas',
-  MVCFramework in '..\..\sources\MVCFramework.pas',
   MVCFramework.Patches in '..\..\sources\MVCFramework.Patches.pas',
   MVCFramework.RESTAdapter in '..\..\sources\MVCFramework.RESTAdapter.pas',
-  MVCFramework.RESTClient in '..\..\sources\MVCFramework.RESTClient.pas',
   MVCFramework.Router in '..\..\sources\MVCFramework.Router.pas',
   MVCFramework.RQL.AST2FirebirdSQL in '..\..\sources\MVCFramework.RQL.AST2FirebirdSQL.pas',
   MVCFramework.RQL.AST2InterbaseSQL in '..\..\sources\MVCFramework.RQL.AST2InterbaseSQL.pas',
   MVCFramework.RQL.AST2MySQL in '..\..\sources\MVCFramework.RQL.AST2MySQL.pas',
   MVCFramework.RQL.AST2PostgreSQL in '..\..\sources\MVCFramework.RQL.AST2PostgreSQL.pas',
+  MVCFramework.RQL.AST2SQLite in '..\..\sources\MVCFramework.RQL.AST2SQLite.pas',
   MVCFramework.RQL.Parser in '..\..\sources\MVCFramework.RQL.Parser.pas',
   MVCFramework.Rtti.Utils in '..\..\sources\MVCFramework.Rtti.Utils.pas',
   MVCFramework.Serializer.Abstract in '..\..\sources\MVCFramework.Serializer.Abstract.pas',
@@ -96,46 +95,32 @@ contains
   MVCFramework.SysControllers in '..\..\sources\MVCFramework.SysControllers.pas',
   MVCFramework.SystemJSONUtils in '..\..\sources\MVCFramework.SystemJSONUtils.pas',
   MVCFramework.View.Cache in '..\..\sources\MVCFramework.View.Cache.pas',
-  MVCFramework.Swagger.Commons in '..\..\sources\MVCFramework.Swagger.Commons.pas',
-  MVCFramework.RQL.AST2SQLite in '..\..\sources\MVCFramework.RQL.AST2SQLite.pas',
+  MVCFramework.Controllers.Register in '..\..\sources\MVCFramework.Controllers.Register.pas',
   MVCFramework.SQLGenerators.Firebird in '..\..\sources\MVCFramework.SQLGenerators.Firebird.pas',
   MVCFramework.SQLGenerators.Interbase in '..\..\sources\MVCFramework.SQLGenerators.Interbase.pas',
   MVCFramework.SQLGenerators.MySQL in '..\..\sources\MVCFramework.SQLGenerators.MySQL.pas',
   MVCFramework.SQLGenerators.PostgreSQL in '..\..\sources\MVCFramework.SQLGenerators.PostgreSQL.pas',
   MVCFramework.SQLGenerators.Sqlite in '..\..\sources\MVCFramework.SQLGenerators.Sqlite.pas',
-  Swag.Doc.Tags in '..\..\lib\swagdoc\Source\Swag.Doc.Tags.pas',
-  Swag.Doc.SecurityDefinitionOAuth2 in '..\..\lib\swagdoc\Source\Swag.Doc.SecurityDefinitionOAuth2.pas',
-  Swag.Doc.SecurityDefinitionBasic in '..\..\lib\swagdoc\Source\Swag.Doc.SecurityDefinitionBasic.pas',
-  Swag.Doc.SecurityDefinitionApiKey in '..\..\lib\swagdoc\Source\Swag.Doc.SecurityDefinitionApiKey.pas',
-  Swag.Doc.SecurityDefinition in '..\..\lib\swagdoc\Source\Swag.Doc.SecurityDefinition.pas',
-  Swag.Doc.Path in '..\..\lib\swagdoc\Source\Swag.Doc.Path.pas',
-  Swag.Doc.Path.Operation.ResponseHeaders in '..\..\lib\swagdoc\Source\Swag.Doc.Path.Operation.ResponseHeaders.pas',
-  Swag.Doc.Path.Operation.Response in '..\..\lib\swagdoc\Source\Swag.Doc.Path.Operation.Response.pas',
-  Swag.Doc.Path.Operation.RequestParameter in '..\..\lib\swagdoc\Source\Swag.Doc.Path.Operation.RequestParameter.pas',
-  Swag.Doc.Path.Operation in '..\..\lib\swagdoc\Source\Swag.Doc.Path.Operation.pas',
-  Swag.Doc in '..\..\lib\swagdoc\Source\Swag.Doc.pas',
-  Swag.Doc.Info in '..\..\lib\swagdoc\Source\Swag.Doc.Info.pas',
-  Swag.Doc.Info.License in '..\..\lib\swagdoc\Source\Swag.Doc.Info.License.pas',
-  Swag.Doc.Info.Contact in '..\..\lib\swagdoc\Source\Swag.Doc.Info.Contact.pas',
-  Swag.Doc.FileLoader in '..\..\lib\swagdoc\Source\Swag.Doc.FileLoader.pas',
-  Swag.Doc.Definition in '..\..\lib\swagdoc\Source\Swag.Doc.Definition.pas',
-  Swag.Common.Types in '..\..\lib\swagdoc\Source\Swag.Common.Types.pas',
-  Swag.Common.Types.Helpers in '..\..\lib\swagdoc\Source\Swag.Common.Types.Helpers.pas',
-  Swag.Common.Consts in '..\..\lib\swagdoc\Source\Swag.Common.Consts.pas',
-  Json.Schema in '..\..\lib\swagdoc\Source\Json.Schema.pas',
-  Json.Schema.Field.Strings in '..\..\lib\swagdoc\Source\Json.Schema.Field.Strings.pas',
-  Json.Schema.Field in '..\..\lib\swagdoc\Source\Json.Schema.Field.pas',
-  Json.Schema.Field.Objects in '..\..\lib\swagdoc\Source\Json.Schema.Field.Objects.pas',
-  Json.Schema.Field.Numbers in '..\..\lib\swagdoc\Source\Json.Schema.Field.Numbers.pas',
-  Json.Schema.Field.Enums in '..\..\lib\swagdoc\Source\Json.Schema.Field.Enums.pas',
-  Json.Schema.Field.DateTimes in '..\..\lib\swagdoc\Source\Json.Schema.Field.DateTimes.pas',
-  Json.Schema.Field.Booleans in '..\..\lib\swagdoc\Source\Json.Schema.Field.Booleans.pas',
-  Json.Schema.Field.Arrays in '..\..\lib\swagdoc\Source\Json.Schema.Field.Arrays.pas',
-  Json.Schema.Common.Types in '..\..\lib\swagdoc\Source\Json.Schema.Common.Types.pas',
-  Json.Common.Helpers in '..\..\lib\swagdoc\Source\Json.Common.Helpers.pas',
+  MVCFramework.Swagger.Commons in '..\..\sources\MVCFramework.Swagger.Commons.pas',
   MVCFramework.Nullables in '..\..\sources\MVCFramework.Nullables.pas',
+  MVCFramework.Serializer.HTML in '..\..\sources\MVCFramework.Serializer.HTML.pas',
+  MVCFramework.LRUCache in '..\..\sources\MVCFramework.LRUCache.pas',
+  MVCFramework.RESTClient.Commons in '..\..\sources\MVCFramework.RESTClient.Commons.pas',
   MVCFramework.RESTClient.Indy in '..\..\sources\MVCFramework.RESTClient.Indy.pas',
-  MVCFramework.RESTClient.Intf in '..\..\sources\MVCFramework.RESTClient.Intf.pas';
+  MVCFramework.RESTClient.Intf in '..\..\sources\MVCFramework.RESTClient.Intf.pas',
+  MVCFramework.RESTClient in '..\..\sources\MVCFramework.RESTClient.pas',
+  MVCFramework.Utils in '..\..\sources\MVCFramework.Utils.pas',
+  JsonDataObjects in '..\..\sources\JsonDataObjects.pas',
+  MVCFramework.DotEnv.Parser in '..\..\sources\MVCFramework.DotEnv.Parser.pas',
+  MVCFramework.DotEnv in '..\..\sources\MVCFramework.DotEnv.pas',
+  MVCFramework.Serializer.URLEncoded in '..\..\sources\MVCFramework.Serializer.URLEncoded.pas',
+  MVCFramework.Serializer.Text in '..\..\sources\MVCFramework.Serializer.Text.pas',
+  MVCFramework.Container in '..\..\sources\MVCFramework.Container.pas',
+  LoggerPro.ConsoleAppender in '..\..\lib\loggerpro\LoggerPro.ConsoleAppender.pas',
+  sqids in '..\..\sources\sqids.pas';
 
 end.
+
+
+
 

@@ -2,11 +2,11 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
-// Collaborators with this file: Ezequiel Juliano Müller (ezequieljuliano@gmail.com)
+// Collaborators with this file: Ezequiel Juliano Mï¿½ller (ezequieljuliano@gmail.com)
 //
 // ***************************************************************************
 //
@@ -45,20 +45,22 @@ type
     FRttiContext: TRttiContext;
     FTypeSerializers: TDictionary<PTypeInfo, IMVCTypeSerializer>;
   protected
+    FConfig: TMVCConfig;
     function GetRttiContext: TRttiContext;
-
     function GetSerializationType(const AObject: TObject; const ADefaultValue: TMVCSerializationType = stDefault): TMVCSerializationType;
-    function GetNameCase(const AObject: TObject; const ADefaultValue: TMVCNameCase = ncAsIs): TMVCNameCase; overload;
-    function GetNameCase(const AComponent: TComponent; const ADefaultValue: TMVCNameCase = ncAsIs): TMVCNameCase; overload;
     function GetDataType(const AOwner: TComponent; const AComponentName: string; const ADefaultValue: TMVCDataType): TMVCDataType;
-    function GetNameAs(const AOwner: TComponent; const AComponentName: string; const ADefaultValue: string): string;
-    function IsIgnoredAttribute(const AAttributes: TMVCIgnoredList; const AName: string): Boolean;
-    function IsIgnoredComponent(const AOwner: TComponent; const AComponentName: string): Boolean;
-    function GetObjectTypeOfGenericList(const ATypeInfo: PTypeInfo): TClass;
   public
+    class function IsIgnoredAttribute(const AAttributes: TMVCIgnoredList; const AName: string): Boolean;
+    class function IsIgnoredComponent(const AOwner: TComponent; const AComponentName: string): Boolean;
+    class function GetNameCase(const AComponent: TComponent; const ADefaultValue: TMVCNameCase = ncAsIs): TMVCNameCase; overload;
+    class function GetNameCase(const AObject: TObject; const ADefaultValue: TMVCNameCase = ncAsIs): TMVCNameCase; overload;
+    class function GetNameAs(const AOwner: TComponent; const AComponentName: string; const ADefaultValue: string): string;
     function GetTypeSerializers: TDictionary<PTypeInfo, IMVCTypeSerializer>;
     procedure RegisterTypeSerializer(const ATypeInfo: PTypeInfo; AInstance: IMVCTypeSerializer);
-    constructor Create;
+    function GetObjectTypeOfGenericList(const ATypeInfo: PTypeInfo; out ARttiType: TRttiType): Boolean; overload;
+    function GetObjectTypeOfGenericList(const ATypeInfo: PTypeInfo): TClass; overload;
+    constructor Create(const Config: TMVCConfig); overload;
+    constructor Create; overload;
     destructor Destroy; override;
   end;
 
@@ -71,11 +73,17 @@ uses
   MVCFramework.Logger,
   System.SysUtils;
 
-constructor TMVCAbstractSerializer.Create;
+constructor TMVCAbstractSerializer.Create(const Config: TMVCConfig);
 begin
   inherited Create;
+  FConfig := Config;
   FRttiContext := TRttiContext.Create;
   FTypeSerializers := TDictionary<PTypeInfo, IMVCTypeSerializer>.Create;
+end;
+
+constructor TMVCAbstractSerializer.Create;
+begin
+  Create(nil);
 end;
 
 destructor TMVCAbstractSerializer.Destroy;
@@ -85,16 +93,26 @@ begin
   inherited Destroy;
 end;
 
-function TMVCAbstractSerializer.GetNameCase(const AObject: TObject; const ADefaultValue: TMVCNameCase): TMVCNameCase;
+class function TMVCAbstractSerializer.GetNameCase(const AObject: TObject; const ADefaultValue: TMVCNameCase): TMVCNameCase;
 var
   ObjType: TRttiType;
   Att: TCustomAttribute;
+  RTTIContext: TRttiContext;
 begin
   Result := ADefaultValue;
-  ObjType := GetRttiContext.GetType(AObject.ClassType);
-  for Att in ObjType.GetAttributes do
-    if Att is MVCNameCaseAttribute then
-      Exit(MVCNameCaseAttribute(Att).KeyCase);
+  RTTIContext := TRttiContext.Create;
+  try
+    ObjType := RTTIContext.GetType(AObject.ClassType);
+    for Att in ObjType.GetAttributes do
+    begin
+      if Att is MVCNameCaseAttribute then
+      begin
+        Exit(MVCNameCaseAttribute(Att).KeyCase);
+      end;
+    end;
+  finally
+    RTTIContext.Free;
+  end;
 end;
 
 function TMVCAbstractSerializer.GetDataType(const AOwner: TComponent; const AComponentName: string; const ADefaultValue: TMVCDataType)
@@ -116,43 +134,80 @@ begin
   end;
 end;
 
-function TMVCAbstractSerializer.GetNameAs(const AOwner: TComponent; const AComponentName, ADefaultValue: string): string;
+class function TMVCAbstractSerializer.GetNameAs(const AOwner: TComponent; const AComponentName, ADefaultValue: string): string;
 var
   ObjType: TRttiType;
   ObjFld: TRttiField;
   Att: TCustomAttribute;
+  RTTIContext: TRttiContext;
 begin
   Result := ADefaultValue;
   if Assigned(AOwner) then
   begin
-    ObjType := GetRttiContext.GetType(AOwner.ClassType);
-    ObjFld := ObjType.GetField(AComponentName);
-    if Assigned(ObjFld) then
-      for Att in ObjFld.GetAttributes do
-        if Att is MVCNameAsAttribute then
-          Exit(MVCNameAsAttribute(Att).Name);
+    RTTIContext := TRttiContext.Create;
+    try
+      ObjType := RTTIContext.GetType(AOwner.ClassType);
+      ObjFld := ObjType.GetField(AComponentName);
+      if Assigned(ObjFld) then
+      begin
+        for Att in ObjFld.GetAttributes do
+        begin
+          if Att is MVCNameAsAttribute then
+          begin
+            Exit(MVCNameAsAttribute(Att).Name);
+          end;
+        end;
+      end;
+    finally
+      RTTIContext.Free;
+    end;
   end;
 end;
 
-function TMVCAbstractSerializer.GetNameCase(const AComponent: TComponent; const ADefaultValue: TMVCNameCase): TMVCNameCase;
+class function TMVCAbstractSerializer.GetNameCase(const AComponent: TComponent; const ADefaultValue: TMVCNameCase): TMVCNameCase;
 var
   ObjType: TRttiType;
   ObjFld: TRttiField;
   Att: TCustomAttribute;
+  RTTIContext: TRttiContext;
 begin
   Result := ADefaultValue;
   if Assigned(AComponent) and Assigned(AComponent.Owner) then
   begin
-    ObjType := GetRttiContext.GetType(AComponent.Owner.ClassType);
-    ObjFld := ObjType.GetField(AComponent.Name);
-    if Assigned(ObjFld) then
-      for Att in ObjFld.GetAttributes do
-        if Att is MVCNameCaseAttribute then
-          Exit(MVCNameCaseAttribute(Att).KeyCase);
+    RTTIContext := TRttiContext.Create;
+    try
+      ObjType := RTTIContext.GetType(AComponent.Owner.ClassType);
+      ObjFld := ObjType.GetField(AComponent.Name);
+      if Assigned(ObjFld) then
+      begin
+        for Att in ObjFld.GetAttributes do
+        begin
+          if Att is MVCNameCaseAttribute then
+          begin
+            Exit(MVCNameCaseAttribute(Att).KeyCase);
+          end;
+        end;
+      end;
+    finally
+      RTTIContext.Free;
+    end;
   end;
 end;
 
 function TMVCAbstractSerializer.GetObjectTypeOfGenericList(const ATypeInfo: PTypeInfo): TClass;
+var
+  LRttiType: TRttiType;
+begin
+  if not GetObjectTypeOfGenericList(ATypeInfo, LRttiType) then
+    Exit(nil);
+
+  if LRttiType.IsInstance then
+    Result := LRttiType.AsInstance.MetaclassType
+  else
+    Result := nil;
+end;
+
+function TMVCAbstractSerializer.GetObjectTypeOfGenericList(const ATypeInfo: PTypeInfo; out ARttiType: TRttiType): Boolean;
 
   function ExtractGenericArguments(ATypeInfo: PTypeInfo): string;
   var
@@ -190,11 +245,13 @@ begin
   LGetEnumerator := GetRttiContext.GetType(ATypeInfo).GetMethod('GetEnumerator');
   if not Assigned(LGetEnumerator) then
   begin
-    Exit(nil);
+    ARttiType := nil;
+    Exit(False);
   end;
 
   LType := ExtractGenericArguments(LGetEnumerator.ReturnType.Handle);
-  Result := GetRttiContext.FindType(LType).AsInstance.MetaclassType;
+  ARttiType := GetRttiContext.FindType(LType);
+  Result := True;
 end;
 
 function TMVCAbstractSerializer.GetRttiContext: TRttiContext;
@@ -212,6 +269,10 @@ var
   lValue: TValue;
   lFound: Boolean;
 begin
+  if AObject = nil then
+  begin
+    Exit(ADefaultValue);
+  end;
   lSerializationTypeCacheKey := AObject.QualifiedClassName + '::sertype';
   if TMVCCacheSingleton.Instance.Contains(lSerializationTypeCacheKey, lValue) then
   begin
@@ -249,31 +310,43 @@ begin
   Result := FTypeSerializers;
 end;
 
-function TMVCAbstractSerializer.IsIgnoredAttribute(const AAttributes: TMVCIgnoredList; const AName: string): Boolean;
+class function TMVCAbstractSerializer.IsIgnoredAttribute(const AAttributes: TMVCIgnoredList; const AName: string): Boolean;
 var
   I: Integer;
 begin
   Result := False;
   for I := low(AAttributes) to high(AAttributes) do
-    if (AAttributes[I] = AName) then
+    if AnsiSameText(AAttributes[I], AName) then
       Exit(True);
 end;
 
-function TMVCAbstractSerializer.IsIgnoredComponent(const AOwner: TComponent; const AComponentName: string): Boolean;
+class function TMVCAbstractSerializer.IsIgnoredComponent(const AOwner: TComponent; const AComponentName: string): Boolean;
 var
   ObjType: TRttiType;
   ObjFld: TRttiField;
   Att: TCustomAttribute;
+  RTTIContext: TRttiContext;
 begin
   Result := False;
   if Assigned(AOwner) then
   begin
-    ObjType := GetRttiContext.GetType(AOwner.ClassType);
-    ObjFld := ObjType.GetField(AComponentName);
-    if Assigned(ObjFld) then
-      for Att in ObjFld.GetAttributes do
-        if Att is MVCDoNotSerializeAttribute then
-          Exit(True);
+    RTTIContext := TRttiContext.Create;
+    try
+      ObjType := RTTIContext.GetType(AOwner.ClassType);
+      ObjFld := ObjType.GetField(AComponentName);
+      if Assigned(ObjFld) then
+      begin
+        for Att in ObjFld.GetAttributes do
+        begin
+          if Att is MVCDoNotSerializeAttribute then
+          begin
+            Exit(True);
+          end;
+        end;
+      end;
+    finally
+      RTTIContext.Free;
+    end;
   end;
 end;
 

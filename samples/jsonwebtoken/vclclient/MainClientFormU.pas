@@ -28,6 +28,8 @@ type
     Splitter2: TSplitter;
     btnLoginWithException: TButton;
     btnLoginJsonObject: TButton;
+    Panel2: TPanel;
+    chkRememberMe: TCheckBox;
     procedure btnGetClick(Sender: TObject);
     procedure btnLOGINClick(Sender: TObject);
     procedure btnLoginWithExceptionClick(Sender: TObject);
@@ -49,8 +51,8 @@ implementation
 
 
 uses
-  MVCFramework.RESTClient,
   MVCFramework.RESTClient.Intf,
+  MVCFramework.RESTClient,
   MVCFramework.SystemJSONUtils,
   System.JSON;
 
@@ -58,7 +60,6 @@ procedure TForm5.btnGetClick(Sender: TObject);
 var
   lClient: IMVCRESTClient;
   lResp: IMVCRESTResponse;
-
 begin
   { Getting JSON response }
   lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
@@ -67,27 +68,24 @@ begin
   begin
     lClient.SetBearerAuthorization(FJWT);
   end;
-  lResp := lClient
+
+  lClient
     .AddQueryStringParam('firstname', 'Daniele')
-    .AddQueryStringParam('lastname', 'Teti')
-    .Get('/admin/role1');
+    .AddQueryStringParam('lastname', 'Teti');
+  lResp := lClient.Get('/admin/role1');
   if not lResp.Success then
     ShowMessage(lResp.Content);
+
   Memo2.Lines.Text := lResp.Content;
 
   { Getting HTML response }
-    // when the JWT authorization header is named "Authorization", the basic authorization must be disabled
-  if not FJWT.IsEmpty then
-  begin
-    lClient.SetBearerAuthorization(FJWT);
-  end;
-  lResp := lClient
+  lClient
     .AddQueryStringParam('firstname', 'Daniele')
-    .AddQueryStringParam('lastname', 'Teti')
-    .Accept('text/html')
-    .Get('/admin/role1');
+    .AddQueryStringParam('lastname', 'Teti');
+  lResp := lClient.Accept('text/html').Get('/admin/role1');
   if not lResp.Success then
     ShowMessage(lResp.Content);
+
   Memo3.Lines.Text := lResp.Content;
 end;
 
@@ -96,17 +94,24 @@ var
   lClient: IMVCRESTClient;
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
+  lSegment: string;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0)
-    .SetBasicAuthorization('user1', 'user1');
-  lRest := lClient.Post('/login');
+  lSegment := '';
+  if chkRememberMe.Checked then
+  begin
+    lSegment := '?rememberme=1';
+  end;
+
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
+  lClient.SetBasicAuthorization('user1', 'user1');
+  lRest := lClient.Post('/login' + lSegment);
   if not lRest.Success then
   begin
     ShowMessage(
       'HTTP ERROR: ' + lRest.StatusCode.ToString + sLineBreak +
-      'CONTENT MESSAGE: ' + lRest.Content);
+      'HTTP ERROR MESSAGE: ' + lRest.StatusText + sLineBreak +
+      'ERROR MESSAGE: ' + lRest.Content);
     Exit;
   end;
 
@@ -123,16 +128,24 @@ var
   lClient: IMVCRESTClient;
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
+  lSegment: string;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0);
-  lRest := lClient.Post('/login', '{"jwtusername":"user1","jwtpassword":"user1"}');
+  lSegment := '';
+  if chkRememberMe.Checked then
+  begin
+    lSegment := '?rememberme=1';
+  end;
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
+  lRest := lClient.Post('/login' + lSegment, '{"jwtusername":"user1","jwtpassword":"user1"}');
+
   if not lRest.Success then
   begin
     ShowMessage(
       'HTTP ERROR: ' + lRest.StatusCode.ToString + sLineBreak +
-      'CONTENT MESSAGE: ' + lRest.Content);
+      'HTTP ERROR MESSAGE: ' + lRest.StatusText + sLineBreak +
+      'ERROR MESSAGE: ' + lRest.Content);
+
     Exit;
   end;
 
@@ -150,17 +163,16 @@ var
   lRest: IMVCRESTResponse;
   lJSON: TJSONObject;
 begin
-  lClient := TMVCRESTClient.New
-    .BaseURL('localhost', 8080)
-    .ReadTimeOut(0)
-    .SetBasicAuthorization('user_raise_exception', 'user_raise_exception');
-
+  lClient := TMVCRESTClient.New.BaseURL('localhost', 8080);
+  lClient.ReadTimeOut(0);
+  lClient.SetBasicAuthorization('user_raise_exception', 'user_raise_exception');
   lRest := lClient.Post('/login');
   if not lRest.Success then
   begin
     ShowMessage(
       'HTTP ERROR: ' + lRest.StatusCode.ToString + sLineBreak +
-      'CONTENT MESSAGE: ' + lRest.Content);
+      'HTTP ERROR MESSAGE: ' + lRest.StatusText + sLineBreak +
+      'ERROR MESSAGE: ' + lRest.Content);
     Exit;
   end;
 

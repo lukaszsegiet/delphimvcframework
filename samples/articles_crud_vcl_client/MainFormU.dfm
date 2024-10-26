@@ -10,9 +10,7 @@ object MainForm: TMainForm
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
-  OldCreateOrder = False
   OnCreate = FormCreate
-  PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
     Left = 0
@@ -91,7 +89,7 @@ object MainForm: TMainForm
         Top = 19
         Width = 107
         Height = 40
-        Caption = 'Filter'
+        Caption = 'Filter by description'
         TabOrder = 0
         OnClick = btnFilterClick
       end
@@ -135,11 +133,24 @@ object MainForm: TMainForm
         FieldName = 'price'
         Title.Caption = 'Price'
         Visible = True
+      end
+      item
+        Expanded = False
+        FieldName = 'createdat'
+        ReadOnly = True
+        Visible = True
+      end
+      item
+        Expanded = False
+        FieldName = 'updatedat'
+        ReadOnly = True
+        Visible = True
       end>
   end
   object dsArticles: TFDMemTable
     AfterOpen = dsArticlesAfterOpen
     BeforePost = dsArticlesBeforePost
+    AfterPost = dsArticlesAfterPost
     BeforeDelete = dsArticlesBeforeDelete
     BeforeRefresh = dsArticlesBeforeRefresh
     FieldDefs = <>
@@ -166,6 +177,14 @@ object MainForm: TMainForm
     end
     object dsArticlesprice: TCurrencyField
       FieldName = 'price'
+    end
+    object dsArticlescreatedat: TDateTimeField
+      AutoGenerateValue = arDefault
+      FieldName = 'createdat'
+    end
+    object dsArticlesupdatedat: TDateTimeField
+      AutoGenerateValue = arDefault
+      FieldName = 'updatedat'
     end
   end
   object dsrcArticles: TDataSource

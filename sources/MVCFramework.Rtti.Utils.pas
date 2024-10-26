@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -34,7 +34,7 @@ uses
   System.Rtti,
   System.Generics.Collections,
   System.SysUtils,
-  Data.DB;
+  Data.DB, MVCFramework.Logger;
 
 type
 
@@ -89,7 +89,17 @@ type
     class function BuildClass(AQualifiedName: string; AParams: array of TValue): TObject;
     class function FindType(AQualifiedName: string): TRttiType;
     class function GetGUID<T>: TGUID;
+    class function GetArrayContainedRTTIType(const RTTIType: TRttiType): TRttiType;
+    class function GetConstructorWithAttribute<T:TCustomAttribute>(const RTTIType: TRttiType): TRttiMethod;
+    class function GetFirstDeclaredConstructor(const RTTIType: TRttiType): TRttiMethod;
   end;
+
+{$IF not defined(BERLINORBETTER)}
+  TValueHelper = record helper for TValue
+  public
+    function IsObjectInstance: Boolean;
+  end;
+{$ENDIF}
 
 function FieldFor(const APropertyName: string): string; inline;
 
@@ -97,7 +107,7 @@ implementation
 
 uses
   MVCFramework.DuckTyping,
-  MVCFramework.Serializer.Commons;
+  MVCFramework.Serializer.Commons, MVCFramework.Commons;
 
 class function TRttiUtils.MethodCall(AObject: TObject; AMethodName: string; AParameters: array of TValue;
   ARaiseExceptionIfNotFound: Boolean): TValue;
@@ -145,6 +155,21 @@ begin
   end;
 end;
 
+class function TRttiUtils.GetArrayContainedRTTIType(
+  const RTTIType: TRttiType): TRttiType;
+var
+  lName: string;
+begin
+  lName := RTTIType.Name;
+  if not lName.StartsWith('TArray<')  then
+  begin
+    raise EMVCDeserializationException.CreateFmt('%s is not an array', [lName]);
+  end;
+  lName := lName.Remove(0, 7);
+  lName := lName.Remove(lName.Length - 1);
+  Result := GlContext.FindType(lName);
+end;
+
 class function TRttiUtils.GetAttribute<T>(const AObject: TRttiType): T;
 var
   Attr: TCustomAttribute;
@@ -154,6 +179,44 @@ begin
   begin
     if Attr.ClassType.InheritsFrom(T) then
       Exit(T(Attr));
+  end;
+end;
+
+class function TRttiUtils.GetConstructorWithAttribute<T>(const RTTIType: TRttiType): TRttiMethod;
+var
+  lConstructors: TArray<TRttiMethod>;
+  lConstructor: TRttiMethod;
+begin
+  Result := nil;
+  lConstructors := RttiType.GetMethods('Create');
+  for lConstructor in lConstructors do
+  begin
+    {$IF Defined(ALEXANDRIAORBETTER)}
+    if lConstructor.HasAttribute<T> then
+    {$ELSE}
+    if TRttiUtils.HasAttribute<T>(lConstructor) then
+    {$ENDIF}
+    begin
+      Result := lConstructor;
+      break; { the first wins }
+    end;
+  end;
+end;
+
+class function TRttiUtils.GetFirstDeclaredConstructor(const RTTIType: TRttiType): TRttiMethod;
+var
+  lConstructors: TArray<TRttiMethod>;
+  lConstructor: TRttiMethod;
+begin
+  Result := nil;
+  lConstructors := RttiType.GetDeclaredMethods;
+  for lConstructor in lConstructors do
+  begin
+    if lConstructor.IsConstructor and (lConstructor.Visibility = TMembervisibility.mvPublic) then
+    begin
+      Result := lConstructor;
+      Break;
+    end;
   end;
 end;
 
@@ -516,7 +579,6 @@ var
   V: TValue;
   Found: Boolean;
 begin
-  Found := False;
   for elem in AList do
   begin
     V := GetProperty(elem, APropertyName);
@@ -734,14 +796,14 @@ end;
 
 class function TRttiUtils.CreateObject(AQualifiedClassName: string; const AParams: TArray<TValue> = nil): TObject;
 var
-  rttitype: TRttiType;
+  lRTTIType: TRttiType;
 begin
-  rttitype := GlContext.FindType(AQualifiedClassName);
-  if Assigned(rttitype) then
-    Result := CreateObject(rttitype, AParams)
+  lRTTIType := GlContext.FindType(AQualifiedClassName);
+  if Assigned(lRTTIType) then
+    Result := CreateObject(lRTTIType, AParams)
   else
     raise Exception.Create('Cannot find RTTI for ' + AQualifiedClassName +
-      '. Hint: Is the specified classtype linked in the module?');
+      '. HINT: Is the specified "QualifiedClassName" linked in the module?');
 end;
 
 class function TRttiUtils.CreateObject(ARttiType: TRttiType; const AParams: TArray<TValue> = nil): TObject;
@@ -785,7 +847,9 @@ begin
     end;
   end
   else
-    raise Exception.Create('Cannot find a propert constructor for ' + ARttiType.ToString);
+  begin
+    raise Exception.Create('Cannot find a parameterless constructor for ' + ARttiType.ToString);
+  end;
 
   { Second solution, dirty and fast }
   // Result := TObject(ARttiType.GetMethod('Create')
@@ -806,89 +870,102 @@ end;
 class function TRttiUtils.Clone(AObject: TObject): TObject;
 var
   _ARttiType: TRttiType;
-  Field: TRttiField;
-  master, cloned: TObject;
+  lField: TRttiField;
+  lMaster, lCloned: TObject;
   Src: TObject;
-  sourceStream: TStream;
-  SavedPosition: Int64;
-  targetStream: TStream;
-  targetCollection: TObjectList<TObject>;
-  sourceCollection: TObjectList<TObject>;
+  lSourceStream: TStream;
+  lSavedPosition: Int64;
+  lTargetStream: TStream;
+  lTargetCollection: TObjectList<TObject>;
+  lSourceCollection: TObjectList<TObject>;
   I: Integer;
-  sourceObject: TObject;
-  targetObject: TObject;
+  lSourceObject: TObject;
+  lTargetObject: TObject;
 begin
   Result := nil;
   if not Assigned(AObject) then
     Exit;
 
   _ARttiType := GlContext.GetType(AObject.ClassType);
-  cloned := CreateObject(_ARttiType);
-  master := AObject;
-  for Field in _ARttiType.GetFields do
+  lCloned := CreateObject(_ARttiType);
+  lMaster := AObject;
+  for lField in _ARttiType.GetFields do
   begin
-    if not Field.FieldType.IsInstance then
-      Field.SetValue(cloned, Field.GetValue(master))
+    if not lField.FieldType.IsInstance then
+    begin
+      lField.SetValue(lCloned, lField.GetValue(lMaster))
+    end
     else
     begin
-      Src := Field.GetValue(AObject).AsObject;
+      Src := lField.GetValue(AObject).AsObject;
       if Src is TStream then
       begin
-        sourceStream := TStream(Src);
-        SavedPosition := sourceStream.Position;
-        sourceStream.Position := 0;
-        if Field.GetValue(cloned).IsEmpty then
+        lSourceStream := TStream(Src);
+        lSavedPosition := lSourceStream.Position;
+        lSourceStream.Position := 0;
+        if lField.GetValue(lCloned).IsEmpty then
         begin
-          targetStream := TMemoryStream.Create;
-          Field.SetValue(cloned, targetStream);
+          lTargetStream := TMemoryStream.Create;
+          lField.SetValue(lCloned, lTargetStream);
         end
         else
-          targetStream := Field.GetValue(cloned).AsObject as TStream;
-        targetStream.Position := 0;
-        targetStream.CopyFrom(sourceStream, sourceStream.Size);
-        targetStream.Position := SavedPosition;
-        sourceStream.Position := SavedPosition;
+          lTargetStream := lField.GetValue(lCloned).AsObject as TStream;
+        lTargetStream.Position := 0;
+        lTargetStream.CopyFrom(lSourceStream, lSourceStream.Size);
+        lTargetStream.Position := lSavedPosition;
+        lSourceStream.Position := lSavedPosition;
       end
       else if Src is TObjectList<TObject> then
       begin
-        sourceCollection := TObjectList<TObject>(Src);
-        if Field.GetValue(cloned).IsEmpty then
+        lSourceCollection := TObjectList<TObject>(Src);
+        if lField.GetValue(lCloned).IsEmpty then
         begin
-          targetCollection := TObjectList<TObject>.Create;
-          Field.SetValue(cloned, targetCollection);
+          lTargetCollection := TObjectList<TObject>.Create;
+          lField.SetValue(lCloned, lTargetCollection);
         end
         else
-          targetCollection := Field.GetValue(cloned).AsObject as TObjectList<TObject>;
-        for I := 0 to sourceCollection.Count - 1 do
+          lTargetCollection := lField.GetValue(lCloned).AsObject as TObjectList<TObject>;
+        for I := 0 to lSourceCollection.Count - 1 do
         begin
-          targetCollection.Add(TRttiUtils.Clone(sourceCollection[I]));
+          lTargetCollection.Add(TRttiUtils.Clone(lSourceCollection[I]));
         end;
       end
       else
       begin
-        sourceObject := Src;
+        lSourceObject := Src;
 
-        if Field.GetValue(cloned).IsEmpty then
+        if lField.GetValue(lCloned).IsEmpty then
         begin
-          targetObject := TRttiUtils.Clone(sourceObject);
-          Field.SetValue(cloned, targetObject);
+          lTargetObject := TRttiUtils.Clone(lSourceObject);
+          lField.SetValue(lCloned, lTargetObject);
         end
         else
         begin
-          targetObject := Field.GetValue(cloned).AsObject;
-          TRttiUtils.CopyObject(sourceObject, targetObject);
+          lTargetObject := lField.GetValue(lCloned).AsObject;
+          TRttiUtils.CopyObject(lSourceObject, lTargetObject);
         end;
-        Field.SetValue(cloned, targetObject);
+        lField.SetValue(lCloned, lTargetObject);
       end;
     end;
 
   end;
-  Result := cloned;
+  Result := lCloned;
 end;
 
 class function TRttiUtils.HasAttribute<T>(AObject: TObject; out AAttribute: T): Boolean;
 begin
   Result := HasAttribute<T>(GlContext.GetType(AObject.ClassType), AAttribute)
 end;
+
+{$IF not defined(BERLINORBETTER)}
+
+{ TValueHelper }
+
+function TValueHelper.IsObjectInstance: Boolean;
+begin
+  Result := (Self.TypeInfo <> nil) and (Self.TypeInfo^.Kind = tkClass);
+end;
+
+{$ENDIF}
 
 end.

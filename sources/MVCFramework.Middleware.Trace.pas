@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -38,8 +38,9 @@ type
   private
     fMaxBodySize: Int64;
   protected
-    procedure OnAfterControllerAction(Context: TWebContext; const AActionNAme: string;
-      const Handled: Boolean);
+    procedure OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
     procedure OnBeforeRouting(Context: TWebContext; var Handled: Boolean);
     procedure OnBeforeControllerAction(Context: TWebContext;
       const AControllerQualifiedClassName: string; const AActionNAme: string; var Handled: Boolean);
@@ -63,29 +64,30 @@ begin
   fMaxBodySize := MaxBodySizeInTrace;
 end;
 
-procedure TMVCTraceMiddleware.OnAfterControllerAction(Context: TWebContext;
-  const AActionNAme: string; const Handled: Boolean);
+procedure TMVCTraceMiddleware.OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 var
   lContentStream: TStringStream;
 begin
   Log.Debug('[AFTER ACTION][RESPONSE][STATUS] ' +
-    Format('%d: %s', [Context.Response.StatusCode, Context.Response.ReasonString]),
+    Format('%d: %s', [AContext.Response.StatusCode, AContext.Response.ReasonString]),
     'trace');
   Log.Debug('[AFTER ACTION][RESPONSE][CUSTOM HEADERS] ' + string.Join(' | ',
-    Context.Response.CustomHeaders.ToStringArray), 'trace');
-  Log.Debug('[AFTER ACTION][RESPONSE][CONTENT-TYPE] ' + Context.Response.ContentType, 'trace');
+    AContext.Response.CustomHeaders.ToStringArray), 'trace');
+  Log.Debug('[AFTER ACTION][RESPONSE][CONTENT-TYPE] ' + AContext.Response.ContentType, 'trace');
 
   lContentStream := TStringStream.Create;
   try
-    if Assigned(Context.Response.RawWebResponse.ContentStream) then
+    if Assigned(AContext.Response.RawWebResponse.ContentStream) then
     begin
-      lContentStream.CopyFrom(Context.Response.RawWebResponse.ContentStream,
-        Min(Context.Response.RawWebResponse.ContentStream.Size, fMaxBodySize));
-      Context.Response.RawWebResponse.ContentStream.Position := 0;
+      lContentStream.CopyFrom(AContext.Response.RawWebResponse.ContentStream,
+        Min(AContext.Response.RawWebResponse.ContentStream.Size, fMaxBodySize));
+      AContext.Response.RawWebResponse.ContentStream.Position := 0;
     end
     else
     begin
-      lContentStream.WriteString(Context.Response.RawWebResponse.Content.Substring(0, fMaxBodySize));
+      lContentStream.WriteString(AContext.Response.RawWebResponse.Content.Substring(0, fMaxBodySize));
     end;
     Log.Debug('[AFTER ACTION][RESPONSE][BODY] ' + lContentStream.DataString, 'trace');
   finally
@@ -95,8 +97,7 @@ end;
 
 procedure TMVCTraceMiddleware.OnAfterRouting(Context: TWebContext; const AHandled: Boolean);
 begin
-  Log.Debug('[AFTER ROUTING][REQUESTED URL: %s][HANDLED: %s]',
-    [Context.Request.PathInfo, AHandled.ToString(TUseBoolStrs.True)], 'trace');
+  //do nothing
 end;
 
 procedure TMVCTraceMiddleware.OnBeforeControllerAction(Context: TWebContext;
@@ -110,28 +111,36 @@ procedure TMVCTraceMiddleware.OnBeforeRouting(Context: TWebContext; var Handled:
 var
   lContentStream: TStringStream;
   lContentType: string;
+  lReq: TMVCWebRequest;
 begin
   lContentStream := TStringStream.Create;
   try
     Context.Request.RawWebRequest.ReadTotalContent;
-    Log.Debug('[BEFORE ROUTING][REQUEST][URL] ' + Context.Request.RawWebRequest.PathInfo, 'trace');
-    Log.Debug('[BEFORE ROUTING][REQUEST][QUERYSTRING] ' + Context.Request.RawWebRequest.QueryFields.
-      DelimitedText, 'trace');
-
-    lContentType := Context.Request.Headers['content-type'].ToLower;
-    if lContentType.StartsWith(TMVCMediaType.APPLICATION_JSON, true) or
-      lContentType.StartsWith(TMVCMediaType.APPLICATION_XML, true) or
-      lContentType.StartsWith(TMVCMediaType.APPLICATION_FORM_URLENCODED, true) or
-      lContentType.StartsWith('text/') then
+    lReq := Context.Request;
+    Log.Debug('[BEFORE ROUTING][%s][IP: %s][URL: %s][QUERYSTRING: %s][LENGTH: %d]', [
+      lReq.HTTPMethodAsString,
+      lReq.ClientIp,
+      lReq.RawWebRequest.PathInfo,
+      lReq.RawWebRequest.QueryFields.DelimitedText,
+      lReq.RawWebRequest.ContentLength
+      ],'trace');
+    if Context.Request.HTTPMethod in [httpPOST, httpPUT] then
     begin
-      lContentStream.WriteString(EncodingGetString(lContentType,
-        Context.Request.RawWebRequest.RawContent).Substring(0, fMaxBodySize));
-    end
-    else
-    begin
-      lContentStream.WriteString('<hidden non text content>');
+      lContentType := Context.Request.Headers['content-type'].ToLower;
+      if lContentType.StartsWith(TMVCMediaType.APPLICATION_JSON, true) or
+        lContentType.StartsWith(TMVCMediaType.APPLICATION_XML, true) or
+        lContentType.StartsWith(TMVCMediaType.APPLICATION_FORM_URLENCODED, true) or
+        lContentType.StartsWith('text/') then
+      begin
+        lContentStream.WriteString(EncodingGetString(lContentType,
+          Context.Request.RawWebRequest.RawContent).Substring(0, fMaxBodySize));
+      end
+      else
+      begin
+        lContentStream.WriteString('<hidden non text content>');
+      end;
+      Log.Debug('[BEFORE ROUTING][REQUEST][BODY] ' + lContentStream.DataString, 'trace');
     end;
-    Log.Debug('[BEFORE ROUTING][REQUEST][BODY] ' + lContentStream.DataString, 'trace');
   finally
     lContentStream.Free;
   end;

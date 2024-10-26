@@ -25,8 +25,8 @@ var
 implementation
 
 uses
-  MVCFramework.RESTClient,
-  MVCFramework.RESTClient.Intf;
+ MVCFramework.RESTClient.Intf,
+  MVCFramework.RESTClient;
 
 {$R *.dfm}
 

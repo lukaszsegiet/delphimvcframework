@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2020 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -762,6 +762,8 @@ begin
   FHTTP.Request.CustomHeaders.FoldLines := False;
   FHTTP.Request.BasicAuthentication := False; // DT 2018/07/24
 
+  // https://www.indyproject.org/2016/01/10/new-tidhttp-flags-and-onchunkreceived-event/
+  FHTTP.HTTPOptions := FHTTP.HTTPOptions + [hoWantProtocolErrorContent, hoNoProtocolErrorException]; //DT 2022/05/24
   FSerializer := GetDefaultSerializer;
 end;
 
@@ -1378,7 +1380,7 @@ begin
   Result.UpdateResponseText(FHTTP.Response.ResponseText);
   Result.UpdateHeaders(FHTTP.Response.RawHeaders);
 
-  if Result.ContentEncoding.IsEmpty then
+  if Result.ContentEncoding.IsEmpty or (Result.ContentEncoding = 'identity') then
     Exit;
 
   if Result.ContentEncoding = 'deflate' then
@@ -1395,7 +1397,7 @@ begin
   lTmp := TMemoryStream.Create;
   try
     Result.Body.Position := 0;
-{$IF Defined(SeattleOrBetter)}
+{$IF Defined(BerlinOrBetter)}
     lDecomp := TZDecompressionStream.Create(Result.Body, MVC_COMPRESSION_ZLIB_WINDOW_BITS[lCompressionType], False);
 {$ELSE}
     lDecomp := TZDecompressionStream.Create(Result.Body, MVC_COMPRESSION_ZLIB_WINDOW_BITS[lCompressionType]);
@@ -1415,9 +1417,9 @@ end;
 function TRESTClient.SendHTTPCommandWithBody(const ACommand: TMVCHTTPMethodType;
   const AAccept, AContentMediaType, AContentCharset, AResource, ABody: string): IRESTResponse;
 var
-  lBytes: TArray<Byte>;
   lContentCharset: string;
   lEncoding: TEncoding;
+  lTmpStrStream: TStringStream;
 begin
   Result := TRESTResponse.Create;
 
@@ -1449,8 +1451,12 @@ begin
 
           lEncoding := TEncoding.GetEncoding(lContentCharset);
           try
-            lBytes := TEncoding.Convert(TEncoding.Default, lEncoding, TEncoding.Default.GetBytes(ABody));
-            RawBody.WriteData(lBytes, Length(lBytes));
+            lTmpStrStream := TStringStream.Create(ABody, lEncoding, False);
+            try
+              RawBody.LoadFromStream(lTmpStrStream);
+            finally
+              lTmpStrStream.Free;
+            end
           finally
             lEncoding.Free;
           end;
@@ -1537,7 +1543,11 @@ begin
   if AEnabled then
   begin
     if not Assigned(FHTTP.IOHandler) then
-      FHTTP.IOHandler := TIdSSLIOHandlerSocketOpenSSL.Create(FHTTP);
+    begin
+      FHTTP.IOHandler := TIdSSLIOHandlerSocketOpenSSL.Create(nil);
+      TIdSSLIOHandlerSocketOpenSSL(FHTTP.IOHandler).SSLOptions.SSLVersions :=
+        [sslvSSLv2, sslvSSLv23, sslvSSLv3, sslvTLSv1,sslvTLSv1_1,sslvTLSv1_2];
+    end;
   end
   else
   begin

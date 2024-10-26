@@ -37,19 +37,13 @@ uses
 procedure TWebModule1.WebModuleCreate(Sender: TObject);
 begin
   FEngine := TMVCEngine.Create(Self);
-
-  FEngine.AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
-    '.\www'{ DocumentRoot }
-    ));
   FEngine.AddMiddleware(TMVCETagMiddleware.Create);
-
   FEngine.AddController(TApp1MainController);
 end;
 
 procedure TWebModule1.WebModuleDestroy(Sender: TObject);
 begin
-  FEngine.free;
+  FEngine.Free;
 end;
 
 end.

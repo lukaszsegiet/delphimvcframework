@@ -41,7 +41,6 @@ type
 
 var
   WebModuleClass: TComponentClass = TMyWebModule;
-  ConnectionDefinitionName: string = '';
 
 implementation
 
@@ -51,6 +50,7 @@ implementation
 uses
   System.IOUtils,
   MVCFramework.Commons,
+  MVCFramework.Middleware.ActiveRecord,
   MVCFramework.ActiveRecordController,
   MVCFramework.ActiveRecord,
   MVCFramework.Middleware.StaticFiles,
@@ -77,34 +77,10 @@ begin
       // Enable Server Signature in response
       Config[TMVCConfigKey.ExposeServerSignature] := 'true';
     end);
-
-  FMVC.AddMiddleware(TMVCStaticFilesMiddleware.Create(
-    '/', { StaticFilesPath }
-    TPath.Combine(ExtractFilePath(GetModuleName(HInstance)), 'www'), { DocumentRoot }
-    'index.html' { IndexDocument }
-    ));
   FMVC.AddController(TOtherController, '/api/foo');
-  FMVC.AddController(TMVCActiveRecordController,
-    function: TMVCController
-    begin
-      Result := TMVCActiveRecordController.Create(
-        function: TFDConnection
-        begin
-          Result := TFDConnection.Create(nil);
-          Result.ConnectionDefName := ConnectionDefinitionName;
-        end,
-        function(aContext: TWebContext; aClass: TMVCActiveRecordClass; aAction: TMVCActiveRecordAction): Boolean
-        begin
-          if aContext.LoggedUser.IsValid then
-          begin
-            Result := True;
-          end
-          else
-          begin
-            Result := True; // not(aAction in [TMVCActiveRecordAction.Delete]);
-          end;
-        end);
-    end, '/api/entities');
+  FMVC.AddController(TMVCActiveRecordController, '/api/entities');
+  {Since 3.4.2-magnesium, TMVCActiveRecordMiddleware is required by TMVCActiveRecordController!}
+  FMVC.AddMiddleware(TMVCActiveRecordMiddleware.Create(CON_DEF_NAME));
 end;
 
 procedure TMyWebModule.WebModuleDestroy(Sender: TObject);
